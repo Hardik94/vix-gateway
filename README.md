@@ -3,7 +3,11 @@
 
 QUIC-Enabled POSIX: A Fast HTTP/3 Gateway with Seamless FUSE Client
 
-`https://medium.com/@hardikprl94/quic-enabled-posix-a-fast-http-3-gateway-with-seamless-fuse-client-15a6735cc9db`
+## 📖 Blog Post
+
+Read the full article here:  
+👉 https://medium.com/@hardikprl94/quic-enabled-posix-a-fast-http-3-gateway-with-seamless-fuse-client-15a6735cc9db
+
 
 ## Control Server
 
