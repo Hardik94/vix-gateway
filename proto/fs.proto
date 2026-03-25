@@ -1,0 +1,55 @@
+syntax = "proto3";
+package vix.fs;
+
+message FsStatRequest { string path = 1; }
+message FsStatResponse {
+  string path = 1;
+  bool is_dir = 2;
+  bool is_file = 3;
+  uint64 mode = 4;
+  uint64 size = 5;
+  int64 mtime = 6;
+  int64 ctime = 7;
+  uint32 uid = 8;
+  uint32 gid = 9;
+  string error = 10; // optional error
+}
+
+message FsReaddirRequest { string path = 1; }
+message DirEntry {
+  string name = 1;
+  bool is_dir = 2;
+  bool is_file = 3;
+  uint64 size = 4;
+  uint64 mode = 5;
+  int64 mtime = 6;
+}
+message FsReaddirResponse { repeated DirEntry entries = 1; }
+
+message FsReadRequest { string path = 1; uint64 offset = 2; uint64 size = 3; }
+message FsReadResponse { bytes data = 1; }
+
+message FsWriteRequest { string path = 1; uint64 offset = 2; bytes data = 3; }
+message FsWriteResponse { bool ok = 1; uint64 written = 2; }
+
+message FsTruncateRequest { string path = 1; uint64 size = 2; }
+message FsMkdirRequest { string path = 1; uint32 mode = 2; }
+message FsUnlinkRequest { string path = 1; }
+message FsRmdirRequest { string path = 1; }
+message FsRenameRequest { string src = 1; string dst = 2; }
+message FsUtimensRequest { string path = 1; double atime = 2; double mtime = 3; }
+
+message FsStatfsRequest { string path = 1; }
+message FsStatfsResponse {
+  uint64 f_bsize = 1;
+  uint64 f_frsize = 2;
+  uint64 f_blocks = 3;
+  uint64 f_bfree = 4;
+  uint64 f_bavail = 5;
+  uint64 f_files = 6;
+  uint64 f_ffree = 7;
+  uint64 f_favail = 8;
+  uint64 f_namemax = 9;
+}
+
+
