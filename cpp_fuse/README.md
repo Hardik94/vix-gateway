@@ -13,21 +13,21 @@ cmake ../cpp_fuse && make -j
 
 cmake -DUSE_QUICHE=ON -DQUICHE_INCLUDE_DIR=src/ -DQUICHE_LIB=src/ .
 
-cmake -DUSE_QUICHE=ON -DQUICHE_INCLUDE_DIR=/home/ext_hardik13_patel_ril_com/cpp_fuse/cpp_fuse/src/ -DQUICHE_LIB=/home/ext_hardik13_patel_ril_com/cpp_fuse/build/CMakeFiles/vix_cpp_fuse.dir/src/transport_quiche.cpp.o ../cpp_fuse
+cmake -DUSE_QUICHE=ON -DQUICHE_INCLUDE_DIR=~/cpp_fuse/cpp_fuse/src/ -DQUICHE_LIB=~/cpp_fuse/build/CMakeFiles/vix_cpp_fuse.dir/src/transport_quiche.cpp.o ../cpp_fuse
 
-cmake -DUSE_QUICHE=ON -DQUICHE_INCLUDE_DIR=/home/ext_hardik13_patel_ril_com/cpp_fuse/cpp_fuse/src/ -DQUICHE_LIB=/home/ext_hardik13_patel_ril_com/cpp_fuse/cpp_fuse/src/ ../cpp_fuse
+cmake -DUSE_QUICHE=ON -DQUICHE_INCLUDE_DIR=~/cpp_fuse/cpp_fuse/src/ -DQUICHE_LIB=~/cpp_fuse/cpp_fuse/src/ ../cpp_fuse
 
-cmake -DUSE_QUICHE=ON -DQUICHE_INCLUDE_DIR=/home/ext_hardik13_patel_ril_com/cpp_fuse/quiche/quiche/include/ -DQUICHE_LIB=/home/ext_hardik13_patel_ril_com/cpp_fuse/quiche/target/release/libquiche.a  -DQUICHE_EXTRA_LIBS="/usr/lib/x86_64-linux-gnu/libssl.so;/usr/lib/x86_64-linux-gnu/libcrypto.so" ../cpp_fuse
+cmake -DUSE_QUICHE=ON -DQUICHE_INCLUDE_DIR=~/cpp_fuse/quiche/quiche/include/ -DQUICHE_LIB=~/cpp_fuse/quiche/target/release/libquiche.a  -DQUICHE_EXTRA_LIBS="/usr/lib/x86_64-linux-gnu/libssl.so;/usr/lib/x86_64-linux-gnu/libcrypto.so" ../cpp_fuse
 
 cmake -DUSE_QUICHE=ON -DUSE_PROTOBUF=ON \
-  -DQUICHE_INCLUDE_DIR=/home/ext_hardik13_patel_ril_com/cpp_fuse/quiche/quiche/include \
-  -DQUICHE_LIB=/home/ext_hardik13_patel_ril_com/cpp_fuse/quiche/target/release/libquiche.a \
+  -DQUICHE_INCLUDE_DIR=~/cpp_fuse/quiche/quiche/include \
+  -DQUICHE_LIB=~/cpp_fuse/quiche/target/release/libquiche.a \
   -DQUICHE_EXTRA_LIBS="$(pkg-config --libs quiche 2>/dev/null || echo '/usr/lib/x86_64-linux-gnu/libssl.so;/usr/lib/x86_64-linux-gnu/libcrypto.so')" \
   ../cpp_fuse
 
 cmake -DUSE_QUICHE=ON -DUSE_PROTOBUF=ON \
-  -DQUICHE_INCLUDE_DIR=/home/ext_hardik13_patel_ril_com/quiche/quiche/include \
-  -DQUICHE_LIB=/home/ext_hardik13_patel_ril_com/quiche/target/release/libquiche.a \
+  -DQUICHE_INCLUDE_DIR=~/quiche/quiche/include \
+  -DQUICHE_LIB=~/quiche/target/release/libquiche.a \
   -DQUICHE_EXTRA_LIBS="$(pkg-config --libs quiche 2>/dev/null || echo '/usr/lib/x86_64-linux-gnu/libssl.so;/usr/lib/x86_64-linux-gnu/libcrypto.so')" \
   ../cpp_fuse
 
@@ -42,49 +42,49 @@ cpack -G RPM
 ```
 sudo ./vix_cpp_fuse <mountpoint> --gateway-host <host> --gateway-port 9443
 
-sudo ./vix_cpp_fuse /home/ext_hardik13_patel_ril_com/vx_data --gateway-host 10.18.0.42 --gateway-port 9443
+sudo ./vix_cpp_fuse ~/vx_data --gateway-host 10.18.0.42 --gateway-port 9443
 
-sudo ./vix_cpp_fuse -o gateway_host=10.18.0.42 -o gateway_port=9443 /home/ext_hardik13_patel_ril_com/vx_data
+sudo ./vix_cpp_fuse -o gateway_host=10.18.0.42 -o gateway_port=9443 ~/vx_data
 
-sudo ./vix_cpp_fuse -o gateway_host=10.18.0.42 -o gateway_port=9443 /home/ext_hardik13_patel_ril_com/vx_data > /tmp/vix_cpp_fuse.log 2>&1
+sudo ./vix_cpp_fuse -o gateway_host=10.18.0.42 -o gateway_port=9443 ~/vx_data > /tmp/vix_cpp_fuse.log 2>&1
 
-sudo ./vix_cpp_fuse --gateway-host 10.18.0.42 --gateway-port 9443 --gateway-token dev -f -d -o --perf /home/ext_hardik13_patel_ril_com/vx_data
+sudo ./vix_cpp_fuse --gateway-host 10.18.0.42 --gateway-port 9443 --gateway-token dev -f -d -o --perf ~/vx_data
 
-sudo bash -c 'stdbuf -oL -eL ./vix_cpp_fuse -f -d -o gateway_host=10.18.0.42 -o gateway_port=9443 /home/ext_hardik13_patel_ril_com/vx_data |& tee /tmp/vix_cpp_fuse.log'
+sudo bash -c 'stdbuf -oL -eL ./vix_cpp_fuse -f -d -o gateway_host=10.18.0.42 -o gateway_port=9443 ~/vx_data |& tee /tmp/vix_cpp_fuse.log'
 
 sudo ./vix_cpp_fuse -f -s -d \
       -o gateway_host=10.18.0.42 -o gateway_port=9443 -o gateway_token=dev \
-      /home/ext_hardik13_patel_ril_com/vx_data
+      ~/vx_data
 
 sudo ./vix_cpp_fuse -f -d \
       -o gateway_host=10.18.0.42 -o gateway_port=9443 -o gateway_token=dev \
-      /home/ext_hardik13_patel_ril_com/vx_data
+      ~/vx_data
 
 sudo ./vix_cpp_fuse -f -d -o vix_perf=1 \
-  --gateway-host 10.18.0.42 --gateway-port 9443 -o gateway_token=dev /home/ext_hardik13_patel_ril_com/vx_data
+  --gateway-host 10.18.0.42 --gateway-port 9443 -o gateway_token=dev ~/vx_data
 
-sudo ./vix_cpp_fuse --gateway-host 10.18.0.42 --gateway-port 9443 -f -d /home/ext_hardik13_patel_ril_com/vx_data
+sudo ./vix_cpp_fuse --gateway-host 10.18.0.42 --gateway-port 9443 -f -d ~/vx_data
 ```
 #########################
 
 
 sudo ./vix_cpp_fuse -f -d \
       -o gateway_host=10.18.0.42 -o gateway_port=9443 -o gateway_token=dev \
-      /home/ext_hardik13_patel_ril_com/vx_data
+      ~/vx_data
 
 sudo ./vix_cpp_fuse -f -d  -o gateway_token=dev \
-  /home/ext_hardik13_patel_ril_com/vx_data \
+  ~/vx_data \
   --control-host 10.18.0.2 --control-port 9444 \
   --client-id lakehouse-dev --control-proxy
 
 sudo ./vix_cpp_fuse -f -d  \
-  /home/ext_hardik13_patel_ril_com/vx_data \
+  ~/vx_data \
   --control-host 10.18.0.2 --control-port 9444 \
   --client-id lakehouse-dev --control-proxy \
   --gateway-token dev
 
 sudo ./vix_cpp_fuse -f -d  \
-  /home/ext_hardik13_patel_ril_com/vx_data \
+  ~/vx_data \
   --control-host cloud.vistrix.in --control-port 443 \
   --client-id lakehouse-dev --control-proxy \
   --gateway-token dev
@@ -108,12 +108,12 @@ cargo build --release --features ffi,pkg-config-meta
 
 ## IOPS test with fio
 
-fio --name=random-read --directory=/home/ext_hardik13_patel_ril_com/vx_data --ioengine=libaio \
+fio --name=random-read --directory=~/vx_data --ioengine=libaio \
 --iodepth=32 --rw=randread --bs=4k --direct=1 --size=1G --numjobs=4 \
 --runtime=60 --group_reporting
 
 ### Prepare test file
-dd if=/dev/zero of=/home/ext_hardik13_patel_ril_com/vx_data/output.bin bs=1M count=1024
+dd if=/dev/zero of=~/vx_data/output.bin bs=1M count=1024
 dd if=/dev/zero of=./test_10.bin bs=1M count=10
 
 dd if=/dev/zero of=./test_640k.bin bs=64k count=10 oflag=sync
@@ -127,7 +127,7 @@ strace -f -tt -e trace=network,ppoll,epoll_wait,select -p 39492
 ### Random read 
 
 fio --name=rr \
-  --filename=/home/ext_hardik13_patel_ril_com/vx_data/test.bin \
+  --filename=~/vx_data/test.bin \
   --ioengine=psync --iodepth=1 \
   --rw=randread --bs=4k \
   --numjobs=4 --time_based=1 --runtime=60 --group_reporting
@@ -149,7 +149,7 @@ Expected improvements (indicative):
 ### Random write
 
 fio --name=rw \
-  --filename=/home/ext_hardik13_patel_ril_com/vx_data/test.bin \
+  --filename=~/vx_data/test.bin \
   --ioengine=psync --iodepth=1 \
   --rw=randwrite --bs=4k \
   --numjobs=4 --time_based=1 --runtime=60 --group_reporting
