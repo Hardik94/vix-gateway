@@ -32,8 +32,8 @@ Artifacts:
 cd vix_package/cpp_gateway
 mkdir -p build && cd build
 cmake -DUSE_QUICHE=ON -DUSE_PROTOBUF=ON \
-  -DQUICHE_INCLUDE_DIR=/home/hardik13.patel/cpp_gateway/quiche/quiche/include \
-  -DQUICHE_LIB=/home/hardik13.patel/cpp_gateway/quiche/quiche/target/release/libquiche.a \
+  -DQUICHE_INCLUDE_DIR=~/cpp_gateway/quiche/quiche/include \
+  -DQUICHE_LIB=~/cpp_gateway/quiche/quiche/target/release/libquiche.a \
   -DQUICHE_EXTRA_LIBS="$(pkg-config --libs quiche 2>/dev/null || echo '/usr/lib/x86_64-linux-gnu/libssl.so;/usr/lib/x86_64-linux-gnu/libcrypto.so')" \
   ../cpp_gateway
 make -j
@@ -41,8 +41,8 @@ make -j
 
 ```bash
 cmake -DUSE_QUICHE=ON -DUSE_PROTOBUF=ON \
-  -DQUICHE_INCLUDE_DIR=/home/hardik13.patel/cpp_gateway/quiche/quiche/include \
-  -DQUICHE_LIB=/home/hardik13.patel/cpp_gateway/quiche/target/release/libquiche.a \
+  -DQUICHE_INCLUDE_DIR=~/cpp_gateway/quiche/quiche/include \
+  -DQUICHE_LIB=~/cpp_gateway/quiche/target/release/libquiche.a \
   -DQUICHE_EXTRA_LIBS="$(pkg-config --libs quiche 2>/dev/null || echo '/usr/lib/x86_64-linux-gnu/libssl.so;/usr/lib/x86_64-linux-gnu/libcrypto.so')" \
   ../cpp_gateway
 make -j
