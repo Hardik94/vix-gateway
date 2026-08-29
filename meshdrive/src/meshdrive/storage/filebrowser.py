@@ -8,7 +8,14 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from meshdrive.constants import FILEBROWSER_BIN_CANDIDATES, FILEBROWSER_DB, FILEBROWSER_JSON
+from meshdrive.constants import (
+    FILEBROWSER_BIN_CANDIDATES,
+    FILEBROWSER_DB,
+    FILEBROWSER_JSON,
+    FILEBROWSER_MIN_PASSWORD_LENGTH,
+)
+
+MIN_PASSWORD_LENGTH = FILEBROWSER_MIN_PASSWORD_LENGTH
 
 
 def which_filebrowser() -> Path | None:
@@ -71,25 +78,100 @@ def write_filebrowser_json(
         pass
 
 
-def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+def _run(cmd: list[str], *, timeout: int = 30) -> subprocess.CompletedProcess[str]:
+    # Prefer running as meshdrive so filebrowser.db ownership stays correct
+    # (agent often runs as root; the Filebrowser unit runs as meshdrive).
+    final = list(cmd)
+    if os.geteuid() == 0:
+        try:
+            import pwd
+
+            pwd.getpwnam("meshdrive")
+            if shutil.which("runuser"):
+                final = ["runuser", "-u", "meshdrive", "--", *cmd]
+            elif shutil.which("sudo"):
+                final = ["sudo", "-n", "-u", "meshdrive", "--", *cmd]
+        except KeyError:
+            pass
+    return subprocess.run(final, capture_output=True, text=True, timeout=timeout, check=False)
+
+
+def _combined(proc: subprocess.CompletedProcess[str]) -> str:
+    return ((proc.stderr or "") + (proc.stdout or "")).strip()
+
+
+def validate_password(password: str) -> None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(
+            f"password must be at least {MIN_PASSWORD_LENGTH} characters "
+            "(Filebrowser requirement)"
+        )
+
+
+def list_filebrowser_usernames(binary: Path | None = None) -> list[str]:
+    bin_path = binary or which_filebrowser()
+    if not bin_path or not FILEBROWSER_DB.is_file():
+        return []
+    proc = _run([str(bin_path), "users", "ls", "-d", str(FILEBROWSER_DB)])
+    if proc.returncode != 0:
+        return []
+    names: list[str] = []
+    for line in (proc.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) < 2 or parts[0].lower() in {"id", "---"}:
+            continue
+        # Table: ID Username Scope Admin ...
+        if parts[0].isdigit():
+            names.append(parts[1])
+    return names
 
 
 def add_filebrowser_user(username: str, password: str, *, admin: bool = False) -> None:
+    """Create or update a Filebrowser account (password always applied)."""
+    validate_password(password)
     binary = which_filebrowser()
     if not binary:
-        return
+        raise RuntimeError("filebrowser binary not found")
     db = FILEBROWSER_DB
     db.parent.mkdir(parents=True, exist_ok=True)
+
+    # Prefer update when the user already exists so password stays in sync.
+    existing = list_filebrowser_usernames(binary)
+    if username in existing:
+        proc = _run(
+            [str(binary), "users", "update", username, "-p", password, "-d", str(db)]
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(_combined(proc) or "filebrowser users update failed")
+        if admin:
+            _run(
+                [
+                    str(binary),
+                    "users",
+                    "update",
+                    username,
+                    "--perm.admin",
+                    "-d",
+                    str(db),
+                ]
+            )
+        return
+
     cmd = [str(binary), "users", "add", username, password, "-d", str(db)]
     if admin:
-        cmd.extend(["--perm.admin"])
+        cmd.append("--perm.admin")
     proc = _run(cmd)
-    if proc.returncode != 0:
-        combined = (proc.stderr or "") + (proc.stdout or "")
-        if "already exists" in combined.lower():
-            return
-        raise RuntimeError(combined.strip() or "filebrowser users add failed")
+    if proc.returncode == 0:
+        return
+    combined = _combined(proc).lower()
+    if "already exists" in combined:
+        proc2 = _run(
+            [str(binary), "users", "update", username, "-p", password, "-d", str(db)]
+        )
+        if proc2.returncode != 0:
+            raise RuntimeError(_combined(proc2) or "filebrowser users update failed")
+        return
+    raise RuntimeError(_combined(proc) or "filebrowser users add failed")
 
 
 def delete_filebrowser_user(username: str) -> None:

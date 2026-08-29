@@ -24,16 +24,36 @@ Each storage backend is an independent JuiceFS volume:
 | Object data | `$ROOT/var/data/<name>/` (`file://`) |
 | Cache | `$ROOT/var/cache/<name>/` |
 | Mount point | `$ROOT/mnt/<name>/` |
-| Capacity | Optional JuiceFS `--capacity` in **GiB** (soft quota) |
+| Capacity | Optional JuiceFS `--capacity` in **GiB** — hard volume quota; this is what `df` shows as Size |
 
 ### Add storage (TUI)
 
 1. Open **Storage** tab
 2. **Add backend** — name, optional data path, optional **size (GB)**
-3. Agent runs `juicefs format` (with `--capacity N` when size is set)
-4. **Mount** — starts `meshdrive-mount@<name>.service`
+3. Agent runs `juicefs format --capacity N` when size is set (N GiB)
+4. **Mount** — starts `meshdrive-mount@<name>.service` (also re-applies capacity via `juicefs config`)
 
-Leave size empty for **unlimited** (limited only by the underlying disk).
+Leave size empty for **unlimited** (JuiceFS then advertises **~1.0P** in `df` — that is normal).
+
+When size is set, terminal should match:
+
+```bash
+df -h /opt/meshdrive/mnt/primary
+# Filesystem      Size  Used Avail Use% Mounted on
+# JuiceFS:…       100G  …     …     …  /opt/meshdrive/mnt/primary
+```
+
+### Existing volume still shows 1.0P
+
+If the TUI already has a size but `df` shows `1.0P`, capacity was never written into JuiceFS metadata. Remount after updating the agent, or set it once:
+
+```bash
+# Replace NAME and N with backend name and GiB from the TUI
+sudo systemctl stop meshdrive-mount@NAME
+/opt/meshdrive/bin/juicefs config sqlite3:///opt/meshdrive/var/meta/NAME.db --capacity N
+sudo systemctl start meshdrive-mount@NAME
+df -h /opt/meshdrive/mnt/NAME
+```
 
 ### Delete storage (TUI)
 

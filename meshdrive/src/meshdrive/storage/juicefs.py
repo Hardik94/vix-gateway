@@ -127,8 +127,12 @@ def format_backend(backend: dict[str, Any], *, binary: Path | None = None) -> No
     data_path.mkdir(parents=True, exist_ok=True)
     Path(backend.get("cache_dir") or VAR / "cache" / name).mkdir(parents=True, exist_ok=True)
     Path(backend["mount_point"]).mkdir(parents=True, exist_ok=True)
+    capacity = parse_capacity_gb(backend.get("capacity_gb"))
     if is_formatted(metadata_url):
         backend["formatted"] = True
+        # Volume already exists — still push capacity into JuiceFS metadata so
+        # `df` reports the allocated size instead of the default 1.0P.
+        apply_capacity(backend, binary=juicefs)
         return
     cmd = [
         str(juicefs),
@@ -138,9 +142,8 @@ def format_backend(backend: dict[str, Any], *, binary: Path | None = None) -> No
         "--bucket",
         str(data_path),
     ]
-    capacity = parse_capacity_gb(backend.get("capacity_gb"))
     if capacity:
-        # JuiceFS --capacity is in GiB (soft quota for the volume).
+        # JuiceFS --capacity is in GiB; this is what `df` shows as Size.
         cmd.extend(["--capacity", str(capacity)])
         backend["capacity_gb"] = capacity
     cmd.extend([metadata_url, name])
@@ -148,6 +151,34 @@ def format_backend(backend: dict[str, Any], *, binary: Path | None = None) -> No
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or "juicefs format failed").strip())
     backend["formatted"] = True
+    # Re-apply via config for consistency (idempotent if format already set it).
+    apply_capacity(backend, binary=juicefs)
+
+
+def apply_capacity(backend: dict[str, Any], *, binary: Path | None = None) -> None:
+    """Set JuiceFS volume capacity (GiB) so mounts report it via statfs/df.
+
+    Without this, JuiceFS defaults to advertising ~1PiB. TUI capacity_gb alone
+    does not change what the Ubuntu terminal shows.
+    """
+    capacity = parse_capacity_gb(backend.get("capacity_gb"))
+    if not capacity:
+        return
+    juicefs = binary or which_juicefs()
+    if not juicefs:
+        raise RuntimeError("juicefs binary not found")
+    metadata_url = backend.get("metadata_url")
+    if not metadata_url:
+        raise ValueError("backend metadata_url is required to set capacity")
+    proc = _run(
+        [str(juicefs), "config", str(metadata_url), "--capacity", str(capacity)],
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            (proc.stderr or proc.stdout or "juicefs config --capacity failed").strip()
+        )
+    backend["capacity_gb"] = capacity
 
 
 def is_mounted(mount_point: str | Path) -> bool:
@@ -162,6 +193,12 @@ def mount_backend(backend: dict[str, Any], *, binary: Path | None = None, foregr
     juicefs = binary or which_juicefs()
     if not juicefs:
         raise RuntimeError("juicefs binary not found")
+    # Ensure allocated size is in JuiceFS metadata before mount so `df` shows it.
+    try:
+        apply_capacity(backend, binary=juicefs)
+    except RuntimeError:
+        # Mount should still proceed if config fails (e.g. unlimited / old binary).
+        pass
     mount_point = Path(backend["mount_point"])
     mount_point.mkdir(parents=True, exist_ok=True)
     if is_mounted(mount_point):
@@ -225,7 +262,9 @@ def unmount_backend(backend: dict[str, Any], *, binary: Path | None = None) -> N
     raise RuntimeError(f"failed to unmount {mount_point}")
 
 
-def disk_stats(path: str | Path) -> dict[str, Any]:
+def disk_stats(path: str | Path, *, capacity_gb: int | None = None) -> dict[str, Any]:
+    """Return usage for a path. When capacity_gb is set, total/free follow that quota
+    (matches JuiceFS --capacity / what `df` should show after config)."""
     target = Path(path)
     if not target.exists():
         return {
@@ -239,13 +278,20 @@ def disk_stats(path: str | Path) -> dict[str, Any]:
         }
     usage = shutil.disk_usage(target)
     used = usage.total - usage.free
-    percent = int(round((used / usage.total) * 100)) if usage.total else 0
+    total = usage.total
+    free = usage.free
+    cap = parse_capacity_gb(capacity_gb)
+    if cap:
+        # Prefer configured JuiceFS capacity over the default 1PiB advertising.
+        total = int(cap) * (1024**3)
+        free = max(0, total - used)
+    percent = int(round((used / total) * 100)) if total else 0
     return {
         "path": str(target),
         "exists": True,
         "mounted": is_mounted(target),
-        "total_bytes": usage.total,
+        "total_bytes": total,
         "used_bytes": used,
-        "free_bytes": usage.free,
+        "free_bytes": free,
         "usage_percent": percent,
     }

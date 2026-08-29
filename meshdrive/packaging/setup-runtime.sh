@@ -111,7 +111,8 @@ if [[ -x "${ROOT}/bin/filebrowser" && ! -f "${ROOT}/var/filebrowser.db" ]]; then
     -d "${ROOT}/var/filebrowser.db" \
     --address 127.0.0.1 \
     --port 8080 \
-    --root "${ROOT}/mnt" >/dev/null 2>&1 || true
+    --root "${ROOT}/mnt" \
+    --minimumPasswordLength 12 >/dev/null 2>&1 || true
 fi
 
 if [[ ! -f "${ROOT}/var/bootstrap-password.txt" ]]; then

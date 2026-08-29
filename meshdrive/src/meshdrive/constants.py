@@ -52,6 +52,9 @@ WG_STATE = VAR / "wireguard" / "state.json"
 CONTROL_HOST = os.environ.get("MESHDRIVE_CONTROL_HOST", "127.0.0.1")
 CONTROL_PORT = int(os.environ.get("MESHDRIVE_CONTROL_PORT", "12700"))
 
+# Filebrowser default --minimumPasswordLength (v2.32+)
+FILEBROWSER_MIN_PASSWORD_LENGTH = 12
+
 ADDON_KEYS = ("mcp", "openfga", "wireguard", "telemetry", "vix_gateway", "vix_fuse", "sssd", "remote_cluster")
 
 FREE_ADDONS = frozenset({"mcp", "openfga", "otel", "telemetry"})

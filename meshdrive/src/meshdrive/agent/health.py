@@ -9,7 +9,14 @@ from meshdrive.config import addon_status, backends, load_config, root
 from meshdrive.constants import BIN, BOOTSTRAP_PASSWORD, CONTROL_HOST, CONTROL_PORT, VIX_FUSE_BIN, VIX_GATEWAY_BIN
 from meshdrive.state import default_state
 from meshdrive.storage.filebrowser import filebrowser_version, which_filebrowser
-from meshdrive.storage.juicefs import disk_stats, fuse_available, is_mounted, juicefs_version, which_juicefs
+from meshdrive.storage.juicefs import (
+    disk_stats,
+    fuse_available,
+    is_mounted,
+    juicefs_version,
+    parse_capacity_gb,
+    which_juicefs,
+)
 
 
 def _component_status(ok: bool, missing: bool = False) -> str:
@@ -29,7 +36,10 @@ def collect_state(*, agent_status: str = "running") -> dict[str, Any]:
     storage_rows = []
     for backend in backends(cfg):
         mount = backend.get("mount_point") or ""
-        stats = disk_stats(mount) if mount else disk_stats(backend.get("data_path") or ".")
+        stats = disk_stats(
+            mount if mount else (backend.get("data_path") or "."),
+            capacity_gb=parse_capacity_gb(backend.get("capacity_gb")),
+        )
         row = {
             "name": backend.get("name"),
             "type": backend.get("type", "juicefs"),

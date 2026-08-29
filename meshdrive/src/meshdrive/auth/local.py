@@ -58,11 +58,18 @@ def add_user(
     storage_access: list[str] | None = None,
     path: Path | None = None,
 ) -> dict[str, Any]:
+    from meshdrive.constants import FILEBROWSER_MIN_PASSWORD_LENGTH
+
     username = username.strip()
     if not username or not password:
         raise ValueError("username and password are required")
     if any(ch.isspace() for ch in username) or "/" in username:
         raise ValueError("username must not contain spaces or slashes")
+    if len(password) < FILEBROWSER_MIN_PASSWORD_LENGTH:
+        raise ValueError(
+            f"password must be at least {FILEBROWSER_MIN_PASSWORD_LENGTH} characters "
+            "(required for Filebrowser login)"
+        )
     data = load_auth(path)
     if username in data["users"]:
         raise ValueError(f"user {username!r} already exists")

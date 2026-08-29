@@ -136,6 +136,15 @@ class AgentAPI:
         if not backend.get("formatted"):
             format_backend(backend)
             upsert_backend(backend)
+        else:
+            # Push capacity into JuiceFS metadata so `df` shows allocated size.
+            from meshdrive.storage.juicefs import apply_capacity
+
+            try:
+                apply_capacity(backend)
+                upsert_backend(backend)
+            except RuntimeError:
+                pass
         if systemd.systemd_available():
             systemd.enable_now(systemd.mount_unit(name))
         else:
@@ -184,15 +193,44 @@ class AgentAPI:
         password = body.get("password") or ""
         admin = bool(body.get("admin"))
         rec = add_user(username, password, admin=admin)
+        unit = systemd.filebrowser_unit()
+        was_running = systemd.unit_is_active(unit)
+        # BoltDB is single-writer; stop Filebrowser before CLI user changes.
+        if was_running:
+            systemd.stop_unit(unit)
         try:
             add_filebrowser_user(username, password, admin=admin)
         except RuntimeError as exc:
-            rec["filebrowser_error"] = str(exc)
+            if was_running:
+                try:
+                    systemd.start_unit(unit)
+                except RuntimeError:
+                    pass
+            raise RuntimeError(
+                f"MeshDrive user saved, but Filebrowser sync failed: {exc}. "
+                "Fix with: sudo systemctl stop meshdrive-filebrowser && "
+                f"sudo -u meshdrive /opt/meshdrive/bin/filebrowser users update "
+                f"{username} -p '<password>' -d /opt/meshdrive/var/filebrowser.db && "
+                "sudo systemctl start meshdrive-filebrowser"
+            ) from exc
+        if was_running:
+            systemd.start_unit(unit)
         return {"ok": True, "user": rec, "state": self.refresh()}
 
     def _delete_user(self, username: str) -> dict[str, Any]:
         delete_user(username)
-        delete_filebrowser_user(username)
+        unit = systemd.filebrowser_unit()
+        was_running = systemd.unit_is_active(unit)
+        if was_running:
+            systemd.stop_unit(unit)
+        try:
+            delete_filebrowser_user(username)
+        finally:
+            if was_running:
+                try:
+                    systemd.start_unit(unit)
+                except RuntimeError:
+                    pass
         return {"ok": True, "state": self.refresh()}
 
     def _filebrowser_start(self) -> dict[str, Any]:
@@ -220,10 +258,20 @@ class AgentAPI:
             add_user("admin", password, admin=True)
         except ValueError:
             pass
+        unit = systemd.filebrowser_unit()
+        was_running = systemd.unit_is_active(unit)
+        if was_running:
+            systemd.stop_unit(unit)
         try:
             add_filebrowser_user("admin", password, admin=True)
         except RuntimeError:
             pass
+        finally:
+            if was_running:
+                try:
+                    systemd.start_unit(unit)
+                except RuntimeError:
+                    pass
 
     def _sync_filebrowser_root(self) -> None:
         """One Filebrowser instance serves all volumes under $ROOT/mnt/<name>/."""

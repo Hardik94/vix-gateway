@@ -6,6 +6,7 @@ from meshdrive.storage.filebrowser import (
     write_filebrowser_json,
 )
 from meshdrive.storage.juicefs import (
+    apply_capacity,
     default_backend,
     disk_stats,
     format_backend,
@@ -17,10 +18,12 @@ from meshdrive.storage.juicefs import (
     parse_capacity_gb,
     unmount_backend,
     which_juicefs,
+    wipe_backend_data,
 )
 
 __all__ = [
     "add_filebrowser_user",
+    "apply_capacity",
     "default_backend",
     "delete_filebrowser_user",
     "disk_stats",
@@ -35,5 +38,6 @@ __all__ = [
     "unmount_backend",
     "which_filebrowser",
     "which_juicefs",
+    "wipe_backend_data",
     "write_filebrowser_json",
 ]

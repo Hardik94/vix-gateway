@@ -51,7 +51,7 @@ class AddUserScreen(ModalScreen[dict | None]):
             yield Static("Add local user", classes="dialog-title")
             yield Label("Username")
             yield Input(placeholder="alice", id="username")
-            yield Label("Password")
+            yield Label("Password (min 12 characters — Filebrowser requirement)")
             yield Input(password=True, id="password")
             yield Label("Confirm password")
             yield Input(password=True, id="confirm")
@@ -73,6 +73,12 @@ class AddUserScreen(ModalScreen[dict | None]):
         admin = self.query_one("#admin", Checkbox).value
         if not username or not password:
             self.app.notify("Username and password are required", severity="error")
+            return
+        if len(password) < 12:
+            self.app.notify(
+                "Password must be at least 12 characters (Filebrowser requirement)",
+                severity="error",
+            )
             return
         if password != confirm:
             self.app.notify("Passwords do not match", severity="error")

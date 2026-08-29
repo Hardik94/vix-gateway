@@ -61,11 +61,40 @@ journalctl -u 'meshdrive-mount@*' -b --no-pager
 |---------|-------|-----|
 | Port 8080 in use | Another service bound | Change port in TUI Settings or `config.yaml` |
 | 403 / empty UI | Mount not up or wrong root | Mount storage first; check `filebrowser.json` root |
+| Invalid credentials | User in MeshDrive but not synced to Filebrowser DB; short password (&lt;12); or DB lock while service running | See recovery below |
 | Cannot log in | No users / wrong password | Check `var/bootstrap-password.txt` or create user in TUI |
 
 ```bash
 journalctl -u meshdrive-filebrowser -b --no-pager
 curl -sS http://127.0.0.1:8080/
+
+# Who exists in Filebrowser (stop service first — BoltDB single writer):
+sudo systemctl stop meshdrive-filebrowser
+sudo -u meshdrive /opt/meshdrive/bin/filebrowser users ls -d /opt/meshdrive/var/filebrowser.db
+```
+
+### Recovery: invalid credentials after creating a user
+
+MeshDrive stores users in `etc/auth.yaml`; Filebrowser login uses **`var/filebrowser.db`**. Sync can fail if the password was under **12 characters**, or if Filebrowser was running (database locked) when the user was added.
+
+Reset the Filebrowser password for an existing MeshDrive username:
+
+```bash
+sudo systemctl stop meshdrive-filebrowser
+sudo -u meshdrive /opt/meshdrive/bin/filebrowser users update YOUR_USER \
+  -p 'YourPassword12+' \
+  -d /opt/meshdrive/var/filebrowser.db
+# If user is missing from Filebrowser:
+sudo -u meshdrive /opt/meshdrive/bin/filebrowser users add YOUR_USER \
+  'YourPassword12+' -d /opt/meshdrive/var/filebrowser.db --perm.admin
+sudo systemctl start meshdrive-filebrowser
+```
+
+Bootstrap admin (first start, no users yet):
+
+```bash
+sudo cat /opt/meshdrive/var/bootstrap-password.txt
+# login as admin with that password
 ```
 
 ---
