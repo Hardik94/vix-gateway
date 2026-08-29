@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="MeshDrive">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B3D2E"/>
+      <stop offset="100%" stop-color="#1F7A5C"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="24" fill="url(#g)"/>
+  <path d="M28 78 L48 38 L64 58 L80 38 L100 78 Z" fill="none" stroke="#E8F5F0" stroke-width="6" stroke-linejoin="round"/>
+  <circle cx="48" cy="38" r="6" fill="#E8F5F0"/>
+  <circle cx="64" cy="58" r="6" fill="#E8F5F0"/>
+  <circle cx="80" cy="38" r="6" fill="#E8F5F0"/>
+  <circle cx="28" cy="78" r="6" fill="#E8F5F0"/>
+  <circle cx="100" cy="78" r="6" fill="#E8F5F0"/>
+  <rect x="36" y="86" width="56" height="10" rx="3" fill="#A7D7C5"/>
+</svg>

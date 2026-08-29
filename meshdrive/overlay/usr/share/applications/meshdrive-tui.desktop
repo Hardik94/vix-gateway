@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=MeshDrive
+Comment=Local-first MeshDrive storage agent
+Exec=/opt/meshdrive/bin/meshdrive-tui
+Icon=folder
+Terminal=true
+Type=Application
+Categories=System;Utility;
+StartupNotify=true

@@ -1,0 +1,94 @@
+name: "meshdrive"
+arch: "amd64"
+platform: "linux"
+version: "2.0.0"
+section: "utils"
+priority: "optional"
+maintainer: "Vistrix Labs - Meshdrive <info@vistrix.in>"
+homepage: https://vistrix.in
+description: |
+  MeshDrive 2.0 local-first storage agent.
+  JuiceFS (sqlite + local disk), Filebrowser on loopback, Textual TUI.
+  Does not depend on ZeroTier or remote LDAP.
+
+depends:
+  - python3
+  - python3-venv
+  - python3-pip
+  - "fuse3 | fuse"
+  - curl
+  - ca-certificates
+  - tar
+  - adduser
+
+recommends:
+  - openssl
+
+contents:
+  - src: ../overlay/opt/meshdrive/systemd
+    dst: /opt/meshdrive/systemd
+    type: tree
+  - src: ../overlay/opt/meshdrive/share
+    dst: /opt/meshdrive/share
+    type: tree
+  - src: ../src
+    dst: /opt/meshdrive/pkg/src
+    type: tree
+  - src: ../pyproject.toml
+    dst: /opt/meshdrive/pkg/pyproject.toml
+  - src: ../README.md
+    dst: /opt/meshdrive/pkg/README.md
+  - src: ./fetch-binaries.sh
+    dst: /opt/meshdrive/packaging/fetch-binaries.sh
+    file_info:
+      mode: 0755
+  - src: ./setup-runtime.sh
+    dst: /opt/meshdrive/packaging/setup-runtime.sh
+    file_info:
+      mode: 0755
+  - src: ./build-vix.sh
+    dst: /opt/meshdrive/packaging/build-vix.sh
+    file_info:
+      mode: 0755
+  - src: ./stage-wireguard.sh
+    dst: /opt/meshdrive/packaging/stage-wireguard.sh
+    file_info:
+      mode: 0755
+  - src: ../overlay/opt/meshdrive/systemd/meshdrive-agent.service
+    dst: /etc/systemd/system/meshdrive-agent.service
+  - src: ../overlay/opt/meshdrive/systemd/meshdrive-mount@.service
+    dst: /etc/systemd/system/meshdrive-mount@.service
+  - src: ../overlay/opt/meshdrive/systemd/meshdrive-filebrowser.service
+    dst: /etc/systemd/system/meshdrive-filebrowser.service
+  - src: ../overlay/usr/share/applications/meshdrive-tui.desktop
+    dst: /usr/share/applications/meshdrive-tui.desktop
+  - src: ../overlay/opt/meshdrive/etc/config.yaml
+    dst: /opt/meshdrive/etc/config.yaml
+    type: config
+  - src: ../overlay/opt/meshdrive/etc/auth.yaml
+    dst: /opt/meshdrive/etc/auth.yaml
+    type: config
+  - src: ../overlay/opt/meshdrive/etc/filebrowser.json
+    dst: /opt/meshdrive/etc/filebrowser.json
+    type: config
+  - src: ../overlay/opt/meshdrive/etc/otel-collector.yaml
+    dst: /opt/meshdrive/etc/otel-collector.yaml
+    type: config
+  - src: ../overlay/opt/meshdrive/etc/mcp-client.json
+    dst: /opt/meshdrive/etc/mcp-client.json
+    type: config
+  - src: ../overlay/opt/meshdrive/etc/openfga-model.json
+    dst: /opt/meshdrive/etc/openfga-model.json
+    type: config
+  - src: ../overlay/opt/meshdrive/etc/openfga-model.fga
+    dst: /opt/meshdrive/etc/openfga-model.fga
+    type: config
+  - src: ../overlay/opt/meshdrive/etc/vix-gateway.env
+    dst: /opt/meshdrive/etc/vix-gateway.env
+    type: config
+  - src: ../overlay/opt/meshdrive/etc/vix-fuse-backends.json
+    dst: /opt/meshdrive/etc/vix-fuse-backends.json
+    type: config
+
+scripts:
+  postinstall: ./postinstall.sh

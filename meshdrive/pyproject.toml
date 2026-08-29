@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meshdrive"
+version = "2.0.0"
+description = "MeshDrive 2.0 local-first storage agent, TUI, and Filebrowser orchestration"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Vistrix Labs", email = "info@vistrix.in" }]
+dependencies = [
+    "textual>=0.80.0",
+    "pyyaml>=6.0",
+    "argon2-cffi>=23.1.0",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2.0", "uvicorn>=0.30.0", "starlette>=0.38.0"]
+
+[project.scripts]
+meshdrive = "meshdrive.cli.__main__:main"
+meshdrive-agent = "meshdrive.agent.__main__:main"
+meshdrive-tui = "meshdrive.tui.__main__:main"
+meshdrive-mount = "meshdrive.storage.mount:main"
+meshdrive-mcp = "meshdrive.mcp.__main__:main"
+meshdrive-addons = "meshdrive.addons.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

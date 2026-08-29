@@ -1,0 +1,75 @@
+name: meshdrive
+base: core22
+version: "2.0.0"
+summary: MeshDrive 2.0 local-first storage with optional paid remote tier
+description: |
+  MeshDrive 2.0 is a local-first JuiceFS + Filebrowser agent with Textual TUI.
+  Free tier: SQLite metadata and local file storage.
+  Paid tier (license token): WireGuard hub-spoke, VIX gateway/FUSE, SSSD/LDAP, remote cluster.
+
+grade: devel
+confinement: classic
+
+architectures:
+  - build-on: amd64
+
+apps:
+  meshdrive:
+    command: bin/meshdrive-wrapper
+  doctor:
+    command: bin/meshdrive-wrapper doctor
+  tui:
+    command: bin/meshdrive-tui-wrapper
+  agent:
+    command: bin/meshdrive-agent-wrapper
+    daemon: simple
+    restart-delay: 5s
+
+parts:
+  meshdrive:
+    plugin: nil
+    source: ..
+    source-type: local
+    override-build: |
+      set -eux
+      ROOT="${SNAPCRAFT_PART_INSTALL}/opt/meshdrive"
+      DEST="${SNAPCRAFT_PART_INSTALL}/bin"
+      mkdir -p "${ROOT}/etc" "${ROOT}/systemd" "${ROOT}/share/wireguard" "${ROOT}/packaging" "${DEST}"
+      cp -a overlay/opt/meshdrive/etc/. "${ROOT}/etc/"
+      cp -a overlay/opt/meshdrive/systemd/. "${ROOT}/systemd/"
+      if [ -d overlay/opt/meshdrive/share/wireguard ]; then
+        cp -a overlay/opt/meshdrive/share/wireguard/. "${ROOT}/share/wireguard/" || true
+      fi
+      if [ -d ../infra/wireguard-hub-spoke ]; then
+        cp ../infra/wireguard-hub-spoke/clients/node.template/wg0.conf.template "${ROOT}/share/wireguard/" || true
+        cp ../infra/wireguard-hub-spoke/scripts/nft-client.nft "${ROOT}/share/wireguard/" || true
+      fi
+      mkdir -p "${ROOT}/pkg"
+      cp -a src "${ROOT}/pkg/src"
+      cp pyproject.toml README.md "${ROOT}/pkg/"
+      cp packaging/fetch-binaries.sh packaging/setup-runtime.sh packaging/build-vix.sh packaging/stage-wireguard.sh "${ROOT}/packaging/"
+      chmod +x "${ROOT}/packaging/"*.sh
+      python3 -m venv "${ROOT}/venv"
+      "${ROOT}/venv/bin/pip" install --upgrade pip wheel
+      "${ROOT}/venv/bin/pip" install "${ROOT}/pkg"
+      bash "${ROOT}/packaging/fetch-binaries.sh" "${ROOT}" || true
+      for name in meshdrive meshdrive-agent meshdrive-tui meshdrive-addons; do
+        printf '%s\n' \
+          '#!/bin/sh' \
+          'export MESHDRIVE_ROOT="${SNAP_COMMON}"' \
+          "exec ${ROOT}/venv/bin/${name} \"\$@\"" \
+          > "${DEST}/${name}-wrapper"
+        chmod 755 "${DEST}/${name}-wrapper"
+      done
+    stage-packages:
+      - python3
+      - python3-venv
+      - python3-pip
+      - fuse3
+      - curl
+      - ca-certificates
+      - tar
+
+layout:
+  /opt/meshdrive:
+    bind: $SNAP_COMMON

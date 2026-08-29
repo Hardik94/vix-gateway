@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metainfo for Flathub / Flatpak community repos -->
+<component type="desktop-application">
+  <id>in.vistrix.MeshDrive</id>
+  <name>MeshDrive</name>
+  <summary>Local-first Linux storage with TUI and optional AI tools</summary>
+  <developer_name>Vistrix Labs</developer_name>
+  <metadata_license>CC0-1.0</metadata_license>
+  <!-- Align with your chosen distribution license before Flathub review -->
+  <project_license>LicenseRef-proprietary</project_license>
+  <url type="homepage">https://vistrix.in</url>
+  <url type="bugtracker">https://github.com/vistrix-labs/meshdrive/issues</url>
+  <url type="help">https://github.com/vistrix-labs/meshdrive/tree/main/meshdrive-2.0/docs</url>
+  <description>
+    <p>
+      MeshDrive is a local-first storage agent for Linux. It keeps files on your
+      disks with JuiceFS (SQLite metadata + local object store), provides a
+      Textual terminal UI for setup, and serves a loopback Filebrowser UI.
+    </p>
+    <p>
+      Free add-ons include MCP for AI tools, OpenFGA authorization, and local
+      OpenTelemetry files. A paid license unlocks WireGuard hub-spoke mesh,
+      LDAP via SSSD, remote JuiceFS, and VIX gateway/FUSE — over WireGuard, not
+      ZeroTier.
+    </p>
+    <p>
+      The Flatpak runs the CLI and TUI in a sandbox with host filesystem and
+      FUSE device access. Persistent state lives under the Flatpak app data
+      directory. For full systemd unit integration on servers, prefer the Snap
+      or Debian package.
+    </p>
+  </description>
+  <launchable type="desktop-id">in.vistrix.MeshDrive.desktop</launchable>
+  <provides>
+    <binary>meshdrive</binary>
+    <binary>meshdrive-tui</binary>
+    <binary>meshdrive-agent</binary>
+  </provides>
+  <categories>
+    <category>System</category>
+    <category>Utility</category>
+    <category>Filesystem</category>
+  </categories>
+  <keywords>
+    <keyword>storage</keyword>
+    <keyword>juicefs</keyword>
+    <keyword>mcp</keyword>
+    <keyword>files</keyword>
+    <keyword>local-first</keyword>
+  </keywords>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="2.0.0" date="2026-08-26">
+      <description>
+        <p>Initial Flatpak packaging for MeshDrive 2.0 (JuiceFS v1.4.1, Filebrowser v2.63.23).</p>
+      </description>
+    </release>
+  </releases>
+</component>

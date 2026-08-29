@@ -1,0 +1,28 @@
+[Unit]
+Description=MeshDrive Filebrowser (loopback)
+After=network-online.target meshdrive-agent.service
+Wants=meshdrive-agent.service
+
+[Service]
+Type=simple
+User=meshdrive
+Group=meshdrive
+Environment=MESHDRIVE_ROOT=/opt/meshdrive
+WorkingDirectory=/opt/meshdrive
+ExecStartPre=/bin/mkdir -p /opt/meshdrive/mnt /opt/meshdrive/var
+ExecStart=/opt/meshdrive/bin/filebrowser -c /opt/meshdrive/etc/filebrowser.json
+Restart=always
+RestartSec=3
+TimeoutStartSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/meshdrive/var /opt/meshdrive/mnt
+ReadOnlyPaths=/opt/meshdrive/etc /opt/meshdrive/bin
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 ::1/128
+
+[Install]
+WantedBy=multi-user.target

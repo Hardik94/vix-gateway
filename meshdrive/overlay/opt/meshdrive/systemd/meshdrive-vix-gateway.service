@@ -1,0 +1,15 @@
+[Unit]
+Description=MeshDrive VIX QUIC gateway (loopback, paid tier)
+After=network.target meshdrive-agent.service
+Wants=meshdrive-agent.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/opt/meshdrive/etc/vix-gateway.env
+ExecStart=/opt/meshdrive/bin/vix_cpp_gateway --storage /opt/meshdrive/mnt/primary --host 127.0.0.1 --port 9443
+Restart=on-failure
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

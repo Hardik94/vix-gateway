@@ -1,0 +1,30 @@
+#!/usr/sbin/nft -f
+# MeshDrive spoke client — SIT ranges (10.200.22.0/24). Patch THIS_V4/THIS_V6 on apply.
+
+define WG_IF     = "wg0"
+define HUB_V4    = 10.200.22.1
+define HUB_V6    = fde4:c0ff:ee22::1
+define LDAP_V4   = 10.200.22.2
+define LDAP_V6   = fde4:c0ff:ee22::2
+define SPOKE_V4  = 10.200.22.0/24
+define SPOKE_V6  = fde4:c0ff:ee22::/64
+define THIS_V4   = 10.200.22.10
+define THIS_V6   = fde4:c0ff:ee22::10
+
+table inet juice_wg_client {
+	chain input {
+		type filter hook input priority 0; policy accept;
+		iifname $WG_IF ct state established,related accept
+		iifname $WG_IF tcp dport 9000 ct state new ip saddr $SPOKE_V4 accept
+		iifname $WG_IF tcp dport 636 ct state new ip saddr $SPOKE_V4 accept
+		iifname $WG_IF limit rate 5/minute burst 5 packets drop
+	}
+	chain output {
+		type filter hook output priority 0; policy accept;
+		oifname $WG_IF ct state established,related accept
+		oifname $WG_IF udp dport 53 ct state new ip daddr $HUB_V4 accept
+		oifname $WG_IF tcp dport { 389, 636 } ct state new ip daddr $LDAP_V4 accept
+		oifname $WG_IF tcp dport 9000 ct state new ip daddr $SPOKE_V4 accept
+		oifname $WG_IF limit rate 5/minute burst 5 packets drop
+	}
+}

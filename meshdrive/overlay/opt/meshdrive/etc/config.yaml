@@ -1,0 +1,52 @@
+meshdrive:
+  version: "2.0.0"
+  mode: local
+
+  storage:
+    backends: []
+
+  filebrowser:
+    enabled: true
+    address: "127.0.0.1"
+    port: 8080
+    root: /opt/meshdrive/mnt
+    database: /opt/meshdrive/var/filebrowser.db
+
+  auth:
+    backend: local
+    path: /opt/meshdrive/etc/auth.yaml
+    session_timeout: 3600
+
+  mcp:
+    enabled: false
+    status: not_installed
+    host: "127.0.0.1"
+    port: 9000
+    progress: 0
+
+  openfga:
+    enabled: false
+    status: not_installed
+    http: "127.0.0.1:8081"
+    progress: 0
+
+  telemetry:
+    enabled: false
+    status: not_installed
+    privacy_level: anonymized
+    send_interval: 86400
+    progress: 0
+    mode: local_file
+
+  wireguard:
+    enabled: false
+    status: not_installed
+    progress: 0
+    message: Paid — meshdrive license activate
+
+  isolation:
+    root_dir: /opt/meshdrive
+    user: meshdrive
+    group: meshdrive
+    allowed_paths:
+      - /opt/meshdrive
