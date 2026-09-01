@@ -55,16 +55,19 @@ def _request(method: str, path: str, body: dict[str, Any] | None = None, timeout
         raise RuntimeError(f"OpenFGA not reachable at {OPENFGA_HTTP}: {exc.reason}") from exc
 
 
-def wait_healthy(timeout: float = 30.0) -> None:
+def wait_healthy(timeout: float = 60.0) -> None:
     deadline = time.time() + timeout
     last = ""
     while time.time() < deadline:
         try:
-            _request("GET", "/healthz")
+            payload = _request("GET", "/healthz")
+            status = str(payload.get("status") or "").upper()
+            if status in {"SERVING", "OK", ""} or payload.get("raw"):
+                return
             return
         except RuntimeError as exc:
             last = str(exc)
-            time.sleep(0.4)
+            time.sleep(0.5)
     raise RuntimeError(f"OpenFGA did not become healthy: {last}")
 
 
@@ -88,7 +91,7 @@ def save_store_meta(data: dict[str, str]) -> None:
 
 def bootstrap() -> dict[str, str]:
     """Create store + write authorization model. Idempotent."""
-    wait_healthy()
+    wait_healthy(timeout=60.0)
     meta = load_store_meta()
     store_id = meta.get("store_id")
     if not store_id:
@@ -146,9 +149,23 @@ def write_tuple(user: str, relation: str, object_id: str) -> None:
 
 
 def grant_mcp_reader(backend_name: str) -> None:
+    """Grant MCP agent read+write on a storage backend (used by file tools via parent)."""
     if not available():
         return
     try:
         write_tuple("agent:mcp", "reader", f"storage_backend:{backend_name}")
+        write_tuple("agent:mcp", "writer", f"storage_backend:{backend_name}")
     except RuntimeError:
         pass
+
+
+def grant_mcp_access_all_backends() -> None:
+    """Re-grant MCP tuples for every configured backend (idempotent best-effort)."""
+    if not available():
+        return
+    from meshdrive.config import backends
+
+    for item in backends():
+        name = item.get("name")
+        if name:
+            grant_mcp_reader(str(name))

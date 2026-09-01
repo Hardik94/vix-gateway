@@ -52,19 +52,24 @@ def write_filebrowser_json(
     database: str | None = None,
     path: Path | None = None,
 ) -> None:
-    """Write Filebrowser config compatible with v2.32+ / v2.63.x."""
+    """Write Filebrowser config compatible with v2.32+ / v2.63.x.
+
+    Empty ``address`` makes Filebrowser listen on ``:port`` (dual-stack
+    IPv4+IPv6 on Linux). ``127.0.0.1`` / ``::1`` keep loopback-only.
+    """
     cfg_path = path or FILEBROWSER_JSON
     Path(root).mkdir(parents=True, exist_ok=True)
     db = database or str(FILEBROWSER_DB)
     Path(db).parent.mkdir(parents=True, exist_ok=True)
+    # Preserve empty string (all interfaces); do not coerce to 127.0.0.1.
+    bind = "" if address is None else str(address)
     payload = {
         "port": int(port),
         "baseURL": "",
-        "address": address or "127.0.0.1",
+        "address": bind,
         "log": "stdout",
         "database": db,
         "root": root,
-        # Stable defaults for newer Filebrowser releases
         "disableThumbnails": False,
         "disablePreviewResize": False,
         "disableExec": True,

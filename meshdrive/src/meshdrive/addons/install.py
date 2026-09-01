@@ -145,7 +145,7 @@ def _enable_unit(unit: str) -> None:
     from meshdrive.agent import systemd
 
     if systemd.systemd_available():
-        systemd.systemd("daemon-reload")
+        systemd.systemctl("daemon-reload")
         systemd.enable_now(unit)
 
 
@@ -176,9 +176,24 @@ def install_mcp(cb: Progress | None = None) -> None:
     pkg = ROOT / "pkg"
     venv_pip = ROOT / "venv" / "bin" / "pip"
     if venv_pip.is_file() and (pkg / "pyproject.toml").is_file():
+        # Force pin first so a previously installed mcp 2.x is downgraded.
+        _run([str(venv_pip), "install", "--upgrade", "mcp>=1.2.0,<2"], timeout=300)
         _run([str(venv_pip), "install", f"{pkg}[mcp]"], timeout=300)
     else:
-        _run([sys.executable, "-m", "pip", "install", "mcp>=1.2.0", "uvicorn", "starlette"], timeout=300)
+        # Pin mcp<2: SDK 2.x removed Server.list_tools() decorators used by meshdrive-mcp.
+        _run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "mcp>=1.2.0,<2",
+                "uvicorn",
+                "starlette",
+            ],
+            timeout=300,
+        )
     _progress("mcp", 50, "writing isolated MCP wrapper", cb)
     venv_mcp = ROOT / "venv" / "bin" / "meshdrive-mcp"
     if venv_mcp.is_file():
@@ -199,32 +214,85 @@ def install_mcp(cb: Progress | None = None) -> None:
 
 def install_openfga(cb: Progress | None = None) -> None:
     ensure_runtime_dirs()
-    (VAR / "openfga").mkdir(parents=True, exist_ok=True)
+    og_dir = VAR / "openfga"
+    og_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        import pwd
+        import grp
+
+        uid = pwd.getpwnam("meshdrive").pw_uid
+        gid = grp.getgrnam("meshdrive").gr_gid
+        os.chown(og_dir, uid, gid)
+    except (KeyError, OSError, PermissionError):
+        pass
+
     _progress("openfga", 15, "downloading OpenFGA binary", cb)
     fetch = _packaging_dir() / "fetch-binaries.sh"
     _run(["bash", str(fetch), str(ROOT), "openfga"], timeout=180)
     _ensure_overlay_file("etc/openfga-model.json")
     _ensure_overlay_file("etc/openfga-model.fga")
+
+    db_uri = f"file:{og_dir / 'openfga.db'}"
+    openfga_bin = BIN / "openfga"
+    if not openfga_bin.is_file():
+        raise AddonError("openfga binary missing after fetch")
+
+    _progress("openfga", 40, "migrating sqlite schema", cb)
+    _run(
+        [
+            str(openfga_bin),
+            "migrate",
+            "--datastore-engine",
+            "sqlite",
+            "--datastore-uri",
+            db_uri,
+        ],
+        timeout=120,
+    )
+    try:
+        import pwd
+        import grp
+
+        uid = pwd.getpwnam("meshdrive").pw_uid
+        gid = grp.getgrnam("meshdrive").gr_gid
+        for path in og_dir.iterdir():
+            try:
+                os.chown(path, uid, gid)
+            except OSError:
+                pass
+    except (KeyError, OSError, PermissionError):
+        pass
+
     _progress("openfga", 55, "installing loopback systemd unit", cb)
     unit = _overlay_unit("meshdrive-openfga.service")
     if unit.is_file():
         _install_unit(unit, "meshdrive-openfga.service")
     try:
         _enable_unit(UNIT["openfga"])
-    except RuntimeError:
-        pass
+    except RuntimeError as exc:
+        _progress("openfga", 70, f"unit enable failed: {exc}", cb)
+
     _progress("openfga", 80, "bootstrapping sqlite store", cb)
     from meshdrive.addons import openfga
 
     try:
+        openfga.wait_healthy(timeout=60.0)
         openfga.bootstrap()
-        for item in backends():
-            name = item.get("name")
-            if name:
-                openfga.grant_mcp_reader(str(name))
+        openfga.grant_mcp_access_all_backends()
     except RuntimeError as exc:
-        _progress("openfga", 90, f"binary installed; start unit then bootstrap: {exc}", cb)
-        set_addon_fields("openfga", status="installed", enabled=False, progress=90, message=str(exc))
+        _progress(
+            "openfga",
+            90,
+            f"binary installed; check: journalctl -u meshdrive-openfga -b — {exc}",
+            cb,
+        )
+        set_addon_fields(
+            "openfga",
+            status="installed",
+            enabled=False,
+            progress=90,
+            message=str(exc),
+        )
         return
     _progress("openfga", 100, "ready on 127.0.0.1:8081", cb)
 

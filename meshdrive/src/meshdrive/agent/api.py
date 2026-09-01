@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import shutil
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from meshdrive.auth import add_user, delete_user, list_users, remove_storage_access
 from meshdrive.config import backends, delete_backend, get_backend, load_config, root, save_config, upsert_backend
-from meshdrive.constants import BOOTSTRAP_PASSWORD, CONTROL_HOST, CONTROL_PORT, MNT
+from meshdrive.constants import BOOTSTRAP_PASSWORD, CONTROL_HOST, CONTROL_PORT, MNT, ROOT
 from meshdrive.storage.filebrowser import (
     add_filebrowser_user,
     delete_filebrowser_user,
@@ -237,10 +241,49 @@ class AgentAPI:
         if not which_filebrowser():
             raise RuntimeError("filebrowser binary not found")
         self._sync_filebrowser_root()
+        self._ensure_local_hostname()
         self._ensure_bootstrap_admin()
         if systemd.systemd_available():
+            # Refresh unit (LAN bind; no IPAddressDeny) from overlay if present.
+            unit_src = ROOT / "systemd" / "meshdrive-filebrowser.service"
+            if not unit_src.is_file():
+                cand = Path(__file__).resolve().parents[3] / "overlay" / "opt" / "meshdrive" / "systemd" / "meshdrive-filebrowser.service"
+                if cand.is_file():
+                    unit_src = cand
+            if unit_src.is_file():
+                dest = Path("/etc/systemd/system/meshdrive-filebrowser.service")
+                try:
+                    shutil.copy2(unit_src, dest)
+                    systemd.systemctl("daemon-reload")
+                except OSError:
+                    pass
             systemd.enable_now(systemd.filebrowser_unit())
         return {"ok": True, "state": self.refresh()}
+
+    def _ensure_local_hostname(self) -> None:
+        """Best-effort: meshdrive.local in /etc/hosts (+ Avahi if present)."""
+        script = ROOT / "packaging" / "ensure-local-hostname.sh"
+        if not script.is_file():
+            alt = Path(__file__).resolve().parents[3] / "packaging" / "ensure-local-hostname.sh"
+            if alt.is_file():
+                script = alt
+        if not script.is_file():
+            return
+        cfg = load_config()
+        fb = root(cfg).get("filebrowser") or {}
+        fqdn = str(fb.get("hostname") or "meshdrive.local")
+        env = {**os.environ, "MESHDRIVE_LOCAL_FQDN": fqdn}
+        try:
+            subprocess.run(
+                ["bash", str(script)],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
     def _ensure_bootstrap_admin(self) -> None:
         if list_users():
@@ -281,9 +324,13 @@ class AgentAPI:
         MNT.mkdir(parents=True, exist_ok=True)
         root_path = str(MNT)
         fb["root"] = root_path
+        fb.setdefault("hostname", "meshdrive.local")
+        # Empty string = all interfaces (dual-stack). Keep explicit loopback if set.
+        if "address" not in fb:
+            fb["address"] = ""
         save_config(cfg)
         write_filebrowser_json(
-            address=str(fb.get("address") or "127.0.0.1"),
+            address=str(fb.get("address") if fb.get("address") is not None else ""),
             port=int(fb.get("port") or 8080),
             root=str(root_path),
             database=str(fb.get("database") or ""),

@@ -53,7 +53,15 @@ def collect_state(*, agent_status: str = "running") -> dict[str, Any]:
         storage_rows.append(row)
 
     mounted_any = any(row.get("mounted") for row in storage_rows)
-    fb_url = f"http://{fb.get('address', '127.0.0.1')}:{fb.get('port', 8080)}"
+    fb_host = str(fb.get("hostname") or "").strip()
+    fb_addr = fb.get("address")
+    if fb_host:
+        display_host = fb_host
+    elif fb_addr in (None, "", "0.0.0.0", "::"):
+        display_host = "meshdrive.local"
+    else:
+        display_host = str(fb_addr)
+    fb_url = f"http://{display_host}:{fb.get('port', 8080)}"
 
     state = default_state()
     state["agent"] = {

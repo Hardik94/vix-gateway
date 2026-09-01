@@ -1,5 +1,5 @@
 [Unit]
-Description=MeshDrive Filebrowser (loopback)
+Description=MeshDrive Filebrowser (LAN + loopback)
 After=network-online.target meshdrive-agent.service
 Wants=meshdrive-agent.service
 
@@ -21,8 +21,8 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/meshdrive/var /opt/meshdrive/mnt
 ReadOnlyPaths=/opt/meshdrive/etc /opt/meshdrive/bin
-IPAddressDeny=any
-IPAddressAllow=127.0.0.1/32 ::1/128
+# LAN access: no IPAddressDeny. Restrict with host firewall if needed
+# (ufw allow from 192.168.0.0/16 to any port 8080).
 
 [Install]
 WantedBy=multi-user.target

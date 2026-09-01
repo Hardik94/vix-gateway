@@ -67,27 +67,33 @@ def _cmd_license(args: argparse.Namespace) -> int:
 
 
 def _cmd_addons(args: argparse.Namespace) -> int:
-    from meshdrive.addons import install as addons_install
+    from meshdrive.addons.install import (
+        AddonError,
+        addon_tier,
+        install as install_addons,
+        list_addons,
+        uninstall,
+    )
 
     if args.addons_cmd == "list":
-        for name in addons_install.list_addons():
-            tier = addons_install.addon_tier(name)
+        for name in list_addons():
+            tier = addon_tier(name)
             print(f"{name}\t{tier}")
         return 0
     if args.addons_cmd == "install":
         try:
-            addons_install.install(args.name)
+            install_addons(args.name)
             print(f"Installed addon: {args.name}")
             return 0
-        except (PermissionError, RuntimeError, ValueError) as exc:
+        except (AddonError, PermissionError, RuntimeError, ValueError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
     if args.addons_cmd == "uninstall":
         try:
-            addons_install.uninstall(args.name)
+            uninstall(args.name)
             print(f"Uninstalled addon: {args.name}")
             return 0
-        except (RuntimeError, ValueError) as exc:
+        except (AddonError, RuntimeError, ValueError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
     return 1

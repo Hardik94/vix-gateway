@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 from meshdrive import __version__
 from meshdrive.config import backends, load_config, root
 from meshdrive.constants import ROOT
-from meshdrive.paths import assert_allowed, is_path_allowed, relative_object_id
+from meshdrive.paths import assert_allowed, is_path_allowed
 from meshdrive.storage.juicefs import disk_stats, is_mounted
 
 FORBIDDEN = frozenset(
@@ -25,30 +26,64 @@ FORBIDDEN = frozenset(
 
 MCP_USER = "agent:mcp"
 
+# Meta tools — no OpenFGA object; isolation still enforced in handlers when paths are used.
+OPENFGA_SKIP = frozenset({"health_check", "get_version", "list_storage_backends"})
 
-def _tool_permission(name: str) -> tuple[str, str]:
-    """Return (relation, object) template; object filled at call time."""
+
+def _tool_permission(name: str) -> str:
     writes = {"write_file", "create_directory", "move_file", "delete_file", "mount_backend"}
-    if name in writes:
-        return "writer", "object"
-    return "reader", "object"
+    return "writer" if name in writes else "reader"
+
+
+def _backend_for_path(path: str) -> str | None:
+    """Return storage backend name if path is under that backend's mount_point."""
+    try:
+        target = Path(path).expanduser().resolve()
+    except OSError:
+        return None
+    for item in backends():
+        mount = item.get("mount_point") or ""
+        if not mount:
+            continue
+        try:
+            target.relative_to(Path(mount).resolve())
+            name = item.get("name")
+            return str(name) if name else None
+        except (ValueError, OSError):
+            continue
+    return None
 
 
 def _authorize(name: str, arguments: dict[str, Any]) -> None:
     if name in FORBIDDEN:
         raise PermissionError("function is not accessible via MCP")
+    if name in OPENFGA_SKIP:
+        return
     try:
         from meshdrive.addons import openfga
     except Exception:
         return
     if not openfga.available():
         return
-    path = arguments.get("path") or arguments.get("backend_name") or str(ROOT)
-    if arguments.get("backend_name") and not arguments.get("path"):
-        object_id = f"storage_backend:{arguments['backend_name']}"
+
+    relation = _tool_permission(name)
+    backend_name = arguments.get("backend_name")
+    path = arguments.get("path")
+
+    # Prefer storage_backend checks — that is what bootstrap grants (agent:mcp reader/writer).
+    if backend_name and not path:
+        object_id = f"storage_backend:{backend_name}"
+    elif path:
+        backend = _backend_for_path(str(path))
+        if backend:
+            object_id = f"storage_backend:{backend}"
+        else:
+            # Path under ROOT but not a mounted backend: isolation only (no FGA object).
+            assert_allowed(path)
+            return
     else:
-        object_id = relative_object_id(path)
-    relation, _ = _tool_permission(name)
+        return
+
     if not openfga.check(MCP_USER, relation, object_id):
         raise PermissionError(f"OpenFGA denied {relation} on {object_id}")
 
@@ -212,19 +247,27 @@ async def _run_stdio() -> None:
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
     from mcp.types import TextContent
+    import logging
 
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    log = logging.getLogger("meshdrive.mcp")
     server = Server("meshdrive-mcp")
 
     @server.list_tools()
     async def handle_list_tools():
-        return _tools()
+        tools = _tools()
+        log.info("ListToolsRequest -> %s tools", len(tools))
+        return tools
 
     @server.call_tool()
     async def handle_call_tool(name: str, arguments: dict):
+        log.info("CallToolRequest name=%s args_keys=%s", name, sorted((arguments or {}).keys()))
         try:
             result = dispatch(name, arguments)
             payload = json.dumps(result, default=str)
+            log.info("CallToolResult name=%s ok bytes=%s", name, len(payload))
         except Exception as exc:
+            log.exception("CallToolResult name=%s error=%s", name, exc)
             payload = json.dumps({"error": str(exc)})
         return [TextContent(type="text", text=payload)]
 
@@ -237,8 +280,13 @@ async def _run_sse() -> None:
     from mcp.server.sse import SseServerTransport
     from mcp.types import TextContent
     from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
     from starlette.routing import Mount, Route
+    import logging
     import uvicorn
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    log = logging.getLogger("meshdrive.mcp")
 
     host = os.environ.get("MESHDRIVE_MCP_HOST", "127.0.0.1")
     port = int(os.environ.get("MESHDRIVE_MCP_PORT", "9000"))
@@ -247,27 +295,47 @@ async def _run_sse() -> None:
 
     @server.list_tools()
     async def handle_list_tools():
-        return _tools()
+        tools = _tools()
+        log.info("ListToolsRequest -> %s tools", len(tools))
+        return tools
 
     @server.call_tool()
     async def handle_call_tool(name: str, arguments: dict):
+        log.info("CallToolRequest name=%s args_keys=%s", name, sorted((arguments or {}).keys()))
         try:
             result = dispatch(name, arguments)
             payload = json.dumps(result, default=str)
+            log.info("CallToolResult name=%s ok bytes=%s", name, len(payload))
         except Exception as exc:
+            log.exception("CallToolResult name=%s error=%s", name, exc)
             payload = json.dumps({"error": str(exc)})
         return [TextContent(type="text", text=payload)]
 
     async def handle_sse(request):
+        log.info("SSE connect from %s", request.client)
         async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
             await server.run(streams[0], streams[1], server.create_initialization_options())
 
+    async def handle_ready(_request):
+        return JSONResponse(
+            {
+                "ok": True,
+                "transport": "sse",
+                "sse": "/sse",
+                "messages": "/messages/",
+                "tools": list(TOOL_SCHEMAS.keys()),
+                "note": "GET /sse only; POST client messages to /messages/?session_id=…",
+            }
+        )
+
     app = Starlette(
         routes=[
-            Route("/sse", endpoint=handle_sse),
+            Route("/sse", endpoint=handle_sse, methods=["GET"]),
+            Route("/ready", endpoint=handle_ready, methods=["GET"]),
             Mount("/messages/", app=sse.handle_post_message),
         ]
     )
+    log.info("MeshDrive MCP SSE listening on http://%s:%s/sse", host, port)
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     await uvicorn.Server(config).serve()
 
@@ -278,6 +346,23 @@ def main() -> int:
     transport = os.environ.get("MESHDRIVE_MCP_TRANSPORT", "stdio").lower()
     try:
         import mcp  # noqa: F401
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            ver = version("mcp")
+            major = int(ver.split(".", 1)[0])
+        except (PackageNotFoundError, ValueError, IndexError):
+            major = 0
+        if major >= 2:
+            print(
+                "Unsupported mcp package version "
+                f"{ver!r}: MeshDrive requires mcp>=1.2.0,<2 "
+                "(SDK 2.x removed Server.list_tools). Fix with:\n"
+                "  /opt/meshdrive/venv/bin/pip install 'mcp>=1.2.0,<2'\n"
+                "  meshdrive addons install mcp",
+                flush=True,
+            )
+            return 1
     except ImportError:
         print(
             "MCP add-on is not installed. Run: sudo meshdrive-addons install mcp",

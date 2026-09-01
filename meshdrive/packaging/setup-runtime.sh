@@ -107,12 +107,20 @@ fi
 if [[ -x "${ROOT}/bin/filebrowser" && ! -f "${ROOT}/var/filebrowser.db" ]]; then
   log "initializing Filebrowser database"
   "${ROOT}/bin/filebrowser" config init -d "${ROOT}/var/filebrowser.db" >/dev/null 2>&1 || true
+  # Empty --address → listen on all interfaces (IPv4 + IPv6 dual-stack)
   "${ROOT}/bin/filebrowser" config set \
     -d "${ROOT}/var/filebrowser.db" \
-    --address 127.0.0.1 \
+    --address "" \
     --port 8080 \
     --root "${ROOT}/mnt" \
     --minimumPasswordLength 12 >/dev/null 2>&1 || true
+fi
+
+# --- Local FQDN (meshdrive.local) for Filebrowser ---
+if [[ -x "${HERE}/ensure-local-hostname.sh" ]]; then
+  bash "${HERE}/ensure-local-hostname.sh" || true
+elif [[ -x "${ROOT}/packaging/ensure-local-hostname.sh" ]]; then
+  bash "${ROOT}/packaging/ensure-local-hostname.sh" || true
 fi
 
 if [[ ! -f "${ROOT}/var/bootstrap-password.txt" ]]; then

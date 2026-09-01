@@ -54,6 +54,14 @@ contents:
     dst: /opt/meshdrive/packaging/stage-wireguard.sh
     file_info:
       mode: 0755
+  - src: ./ensure-local-hostname.sh
+    dst: /opt/meshdrive/packaging/ensure-local-hostname.sh
+    file_info:
+      mode: 0755
+  - src: ./mcp-smoke-test.py
+    dst: /opt/meshdrive/packaging/mcp-smoke-test.py
+    file_info:
+      mode: 0755
   - src: ../overlay/opt/meshdrive/systemd/meshdrive-agent.service
     dst: /etc/systemd/system/meshdrive-agent.service
   - src: ../overlay/opt/meshdrive/systemd/meshdrive-mount@.service

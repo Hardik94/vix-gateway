@@ -165,30 +165,71 @@ Ask the model: *“Use the meshdrive MCP tool health_check”* and *“list file
 
 ## 4. Hermes
 
-“Hermes” usually means an MCP-capable agent runtime (e.g. Hermes agent / CLI that loads MCP servers). Use the same **stdio** pattern as Cursor.
+“Hermes” (NousResearch hermes-agent) can use **stdio** (simplest) or **SSE**.
 
-### Config sketch
+### Preferred: stdio (no HTTP 405 issues)
 
-Wherever Hermes reads MCP servers (check its docs for `mcpServers` / `mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "meshdrive": {
-      "command": "/opt/meshdrive/bin/meshdrive-mcp",
-      "args": [],
-      "env": {
-        "MESHDRIVE_ROOT": "/opt/meshdrive",
-        "MESHDRIVE_MCP_TRANSPORT": "stdio"
-      }
-    }
-  }
-}
+```yaml
+# ~/.hermes/config.yaml  (keys may vary slightly by Hermes version)
+mcp_servers:
+  meshdrive:
+    command: /opt/meshdrive/bin/meshdrive-mcp
+    args: []
+    env:
+      MESHDRIVE_ROOT: /opt/meshdrive
+      MESHDRIVE_MCP_TRANSPORT: stdio
+    enabled: true
 ```
 
-### If Hermes only supports SSE
+```yaml
+mcp_servers:
+  meshdrive:
+    command: /opt/data/mcp/meshdrive-mcp
+    args: []
+    env:
+      MESHDRIVE_ROOT: /opt/meshdrive
+      MESHDRIVE_MCP_TRANSPORT: stdio
+    enabled: true
+```
 
-Point it at `http://127.0.0.1:9000/sse` with MCP SSE mode enabled (same as Open WebUI section).
+Or JSON-style `mcpServers` if your Hermes build uses that (same command/env as Cursor).
+
+### SSE URL — must set `transport: sse`
+
+MeshDrive SSE is the **legacy MCP SSE** shape:
+
+| Method | Path | Role |
+|--------|------|------|
+| **GET** | `/sse` | Open event stream |
+| **POST** | `/messages/` | Client → server messages |
+
+Hermes **defaults URL servers to Streamable HTTP** (it **POST**s to the URL). That hits `/sse` with POST → **`405 Method Not Allowed`**.
+
+Fix — edit `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  meshdrive:
+    url: "http://127.0.0.1:9000/sse"
+    transport: sse          # REQUIRED — do not omit
+    enabled: true
+    connect_timeout: 15
+```
+
+Then:
+
+```bash
+hermes mcp test meshdrive
+# or restart Hermes and check MCP status
+```
+
+Verify the server side:
+
+```bash
+curl -sS -I http://127.0.0.1:9000/sse    # GET — should not be 405
+# POST to /sse is supposed to fail:
+curl -sS -X POST http://127.0.0.1:9000/sse -w "%{http_code}\n" -o /dev/null   # 405
+```
 
 ### Verify
 
@@ -204,6 +245,81 @@ From Hermes, invoke `health_check` and `list_storage_backends`. Confirm denied p
 | `MESHDRIVE_MCP_TRANSPORT` | `stdio` | `stdio` or `sse` |
 | `MESHDRIVE_MCP_HOST` | `127.0.0.1` | SSE bind address |
 | `MESHDRIVE_MCP_PORT` | `9000` | SSE port |
+
+---
+
+## Release client matrix (how we ship MCP)
+
+Separate **“MCP protocol works”** from **“chat LLM calls tools”**. They are different layers.
+
+| Client | Transport | Release status | Notes |
+|--------|-----------|----------------|-------|
+| **Cursor** | stdio | **Supported (primary)** | Best end-to-end verification path |
+| **Claude Code** | stdio | **Supported** | Same config as Cursor |
+| **Hermes** | stdio | **Supported** | Prefer command mode, not URL |
+| **Hermes** | SSE URL | Supported if `transport: sse` | Default URL mode = Streamable HTTP → 405 |
+| **Open WebUI** | native MCP SSE + Ollama | **Experimental** | Session often OK (`POST /messages/ 200`) but Ollama often never emits `tool_calls` |
+| **Open WebUI** | **mcpo** (MCP→OpenAPI) | **Recommended for OWUI** | More reliable than raw MCP SSE with local models |
+
+### Diagnose in 60 seconds
+
+On the MeshDrive machine (or any LAN client):
+
+```bash
+# 1) Protocol smoke test (does NOT use an LLM)
+sudo systemctl restart meshdrive-mcp
+curl -sS http://127.0.0.1:9000/ready
+/opt/meshdrive/venv/bin/python /opt/meshdrive/packaging/mcp-smoke-test.py \
+  --url http://127.0.0.1:9000/sse
+
+# 2) Watch whether tools are actually invoked
+journalctl -u meshdrive-mcp -f
+# Expect: ListToolsRequest, then CallToolRequest name=health_check
+# If you only see ListToolsRequest during chat → LLM/client never called tools
+```
+
+Interpretation:
+
+| Logs during chat | Meaning |
+|------------------|---------|
+| `ListToolsRequest` only | Client connected; **model did not call tools** |
+| `CallToolRequest` + `CallToolResult` | MeshDrive executed the tool; fix client UI/result display |
+| No MCP log lines | Client not talking to this server |
+
+### Open WebUI + Ollama (why qwen/gemma “don’t trigger”)
+
+This is a **known Open WebUI/Ollama gap**, not MeshDrive-specific:
+
+1. Set model **Function calling = native** (Workspace → Models)  
+2. Raise context (`num_ctx` / `OLLAMA_CONTEXT_LENGTH` to **8192+**; 2048 truncates tool schemas)  
+3. Enable the MeshDrive tools on the **chat** (not only in Admin)  
+4. Prefer **[mcpo](https://github.com/open-webui/mcpo)** in front of MeshDrive for release demos:
+
+```bash
+# Example: OpenAPI bridge for Open WebUI
+uvx mcpo --port 8002 -- /opt/meshdrive/bin/meshdrive-mcp
+# In Open WebUI add OpenAPI tool server: http://127.0.0.1:8002
+```
+
+### Hermes release recommendation
+
+Use **stdio**, not SSE URL:
+
+```yaml
+mcp_servers:
+  meshdrive:
+    command: /opt/meshdrive/bin/meshdrive-mcp
+    env:
+      MESHDRIVE_ROOT: /opt/meshdrive
+      MESHDRIVE_MCP_TRANSPORT: stdio
+    enabled: true
+```
+
+### Release messaging
+
+- **GA claim:** “Works with Cursor / Claude Code / Hermes (stdio).”  
+- **Open WebUI:** “Supported via mcpo OpenAPI bridge; native MCP SSE is experimental with local Ollama.”  
+- Ship `packaging/mcp-smoke-test.py` as the CI/release gate (must PASS before tagging).
 
 ---
 
@@ -240,6 +356,7 @@ Blocked: user admin / system config tools — see [mcp.md](mcp.md).
 | Client can’t start MCP | `ls /opt/meshdrive/bin/meshdrive-mcp`; reinstall `meshdrive addons install mcp` |
 | Tools missing in Cursor | Reload MCP; check JSON syntax in `.cursor/mcp.json` |
 | Open WebUI can’t connect | Ensure `MESHDRIVE_MCP_TRANSPORT=sse` and `curl http://127.0.0.1:9000/sse` |
+| Hermes `POST /sse` → **405** | Hermes defaulted to Streamable HTTP | Set `transport: sse` on that server in `~/.hermes/config.yaml`, or use **stdio** instead |
 | Permission denied on path | Path outside `isolation.allowed_paths`; use `$ROOT/mnt/...` |
 | Empty directories | Mount backend in TUI first |
 

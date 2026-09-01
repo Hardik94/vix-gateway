@@ -63,15 +63,41 @@ journalctl -u 'meshdrive-mount@*' -b --no-pager
 | 403 / empty UI | Mount not up or wrong root | Mount storage first; check `filebrowser.json` root |
 | Invalid credentials | User in MeshDrive but not synced to Filebrowser DB; short password (&lt;12); or DB lock while service running | See recovery below |
 | Cannot log in | No users / wrong password | Check `var/bootstrap-password.txt` or create user in TUI |
+| OpenFGA not healthy | Missing `openfga migrate` or unit crash | `journalctl -u meshdrive-openfga`; re-run `meshdrive addons install openfga` |
 
 ```bash
 journalctl -u meshdrive-filebrowser -b --no-pager
 curl -sS http://127.0.0.1:8080/
+curl -sS http://meshdrive.local:8080/   # after hostname helper / mDNS
 
 # Who exists in Filebrowser (stop service first — BoltDB single writer):
 sudo systemctl stop meshdrive-filebrowser
 sudo -u meshdrive /opt/meshdrive/bin/filebrowser users ls -d /opt/meshdrive/var/filebrowser.db
 ```
+
+### Access on the LAN (`meshdrive.local`)
+
+**Better suggestion than only `/etc/hosts`:** use **Avahi/mDNS** so other devices resolve the name without editing hosts on each client.
+
+| Approach | Scope | Notes |
+|----------|--------|--------|
+| **mDNS** — hostname `meshdrive` + `avahi-daemon` | Whole LAN | Preferred for phones / other PCs |
+| **`ensure-local-hostname.sh`** | This machine | Writes IPv4+IPv6 into `/etc/hosts` |
+| Raw LAN IP | Always | Fallback |
+
+```bash
+sudo apt-get install -y avahi-daemon
+sudo hostnamectl set-hostname meshdrive          # → meshdrive.local via mDNS
+sudo /opt/meshdrive/packaging/ensure-local-hostname.sh
+
+# Empty address = listen on 0.0.0.0 and [::] (dual-stack)
+sudo cp /opt/meshdrive/systemd/meshdrive-filebrowser.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart meshdrive-filebrowser
+ss -ltnup | grep 8080
+```
+
+Keep **agent / MCP / OpenFGA on 127.0.0.1**. For Filebrowser on LAN, restrict with firewall if needed (`ufw allow from 192.168.0.0/16 to any port 8080`). Loopback-only: set `filebrowser.address: "127.0.0.1"` in `config.yaml`.
 
 ### Recovery: invalid credentials after creating a user
 
@@ -105,6 +131,7 @@ sudo cat /opt/meshdrive/var/bootstrap-password.txt
 |---------|-------|-----|
 | Paid addon rejected | No license | `meshdrive license activate --token …` |
 | MCP import error | `[mcp]` extra not installed | `meshdrive addons install mcp` |
+| `Server has no attribute list_tools` | `mcp` 2.x installed (API break) | Pin `mcp>=1.2.0,<2` and reinstall: `/opt/meshdrive/venv/bin/pip install 'mcp>=1.2.0,<2'` |
 | OpenFGA bootstrap failed | Binary up but API not ready | Start unit, retry install |
 | OTEL no files | Telemetry disabled in settings | Enable in TUI Settings |
 

@@ -17,7 +17,9 @@ _EMPTY = {
         "storage": {"backends": []},
         "filebrowser": {
             "enabled": True,
-            "address": "127.0.0.1",
+            # Empty → all interfaces (IPv4 + IPv6). Use "127.0.0.1" for loopback-only.
+            "address": "",
+            "hostname": "meshdrive.local",
             "port": 8080,
             "root": str(MNT),
             "database": str(VAR / "filebrowser.db"),

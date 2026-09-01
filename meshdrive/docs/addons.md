@@ -43,7 +43,15 @@ meshdrive addons install mcp
 sudo systemctl status meshdrive-mcp
 ```
 
-Installs Python `[mcp]` extra into the MeshDrive venv, writes `bin/meshdrive-mcp`, enables `meshdrive-mcp.service`.
+Installs Python `[mcp]` extra into the MeshDrive venv (**`mcp>=1.2.0,<2`** — SDK 2.x breaks `list_tools`), writes `bin/meshdrive-mcp`, enables `meshdrive-mcp.service`.
+
+If you see `Server object has no attribute list_tools`:
+
+```bash
+/opt/meshdrive/venv/bin/pip install --upgrade 'mcp>=1.2.0,<2'
+meshdrive addons install mcp
+```
+
 
 **Integration:** see [mcp.md](mcp.md).
 
@@ -59,7 +67,17 @@ Fine-grained authorization for MCP file operations.
 meshdrive addons install openfga
 ```
 
-Downloads pinned OpenFGA binary, bootstraps sqlite store, loads model from `etc/openfga-model.json`, grants default tuples for storage backends.
+Downloads pinned OpenFGA binary, runs **`openfga migrate`** (sqlite schema), starts `meshdrive-openfga.service`, bootstraps store + model from `etc/openfga-model.json`, grants default tuples for storage backends.
+
+If status stays at 90% / “not reachable”:
+
+```bash
+sudo systemctl status meshdrive-openfga --no-pager
+journalctl -u meshdrive-openfga -b --no-pager | tail -40
+# Re-install after updating package:
+meshdrive addons install openfga
+curl -sS http://127.0.0.1:8081/healthz
+```
 
 When running, MCP write/read calls are checked as `agent:mcp` against `storage_backend:<name>` and `file:<path>` objects.
 
