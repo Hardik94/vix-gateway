@@ -38,6 +38,27 @@ BIN = ROOT / "bin"
 MNT = ROOT / "mnt"
 SHARE = Path(SNAP) / "share" / "meshdrive" if SNAP else ROOT / "share"
 
+# Read-only binaries shipped in the package. Under snap, ROOT is SNAP_COMMON
+# (writable data via layout bind), while juicefs/filebrowser live under $SNAP.
+def _shipped_bin_dirs() -> tuple[Path, ...]:
+    dirs: list[Path] = []
+    if SNAP:
+        dirs.append(Path(SNAP) / "opt" / "meshdrive" / "bin")
+        dirs.append(Path(SNAP) / "bin")
+    dirs.append(BIN)
+    # de-dupe while preserving order
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for d in dirs:
+        if d not in seen:
+            seen.add(d)
+            out.append(d)
+    return tuple(out)
+
+
+SHIPPED_BIN_DIRS = _shipped_bin_dirs()
+PACKAGE_BIN = SHIPPED_BIN_DIRS[0]
+
 CONFIG_PATH = ETC / "config.yaml"
 AUTH_PATH = ETC / "auth.yaml"
 LICENSE_PATH = ETC / "license.yaml"
@@ -62,17 +83,16 @@ PAID_ADDONS = frozenset(
     {"wireguard", "vix-gateway", "vix-fuse", "sssd-ldap", "remote-cluster", "vix_gateway", "vix_fuse", "sssd", "remote_cluster"}
 )
 
-JUICEFS_BIN_CANDIDATES = (
-    BIN / "juicefs",
+JUICEFS_BIN_CANDIDATES = tuple(d / "juicefs" for d in SHIPPED_BIN_DIRS) + (
     Path("/usr/local/bin/juicefs"),
     Path("/usr/bin/juicefs"),
 )
-FILEBROWSER_BIN_CANDIDATES = (
-    BIN / "filebrowser",
+FILEBROWSER_BIN_CANDIDATES = tuple(d / "filebrowser" for d in SHIPPED_BIN_DIRS) + (
     Path("/usr/local/bin/filebrowser"),
 )
-OPENFGA_BIN_CANDIDATES = (BIN / "openfga",)
-OTEL_BIN_CANDIDATES = (BIN / "otelcol-contrib",)
+OPENFGA_BIN_CANDIDATES = tuple(d / "openfga" for d in SHIPPED_BIN_DIRS)
+OTEL_BIN_CANDIDATES = tuple(d / "otelcol-contrib" for d in SHIPPED_BIN_DIRS)
+# Paid/runtime binaries land in ROOT/bin (SNAP_COMMON under snap).
 VIX_GATEWAY_BIN = BIN / "vix_cpp_gateway"
 VIX_FUSE_BIN = BIN / "vix_cpp_fuse"
 

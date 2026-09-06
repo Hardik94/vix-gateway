@@ -1,0 +1,29 @@
+[Unit]
+Description=MeshDrive MCP server (loopback SSE)
+After=meshdrive-agent.service
+Wants=meshdrive-agent.service
+
+[Service]
+Type=simple
+User=meshdrive
+Group=meshdrive
+Environment=MESHDRIVE_ROOT=/opt/meshdrive
+Environment=MESHDRIVE_MCP_TRANSPORT=sse
+Environment=MESHDRIVE_MCP_HOST=127.0.0.1
+Environment=MESHDRIVE_MCP_PORT=9000
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/meshdrive/bin/meshdrive-mcp
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/meshdrive/var /opt/meshdrive/mnt
+ReadOnlyPaths=/opt/meshdrive/etc /opt/meshdrive/bin
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 ::1/128
+
+[Install]
+WantedBy=multi-user.target

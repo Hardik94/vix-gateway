@@ -71,13 +71,36 @@ class AgentClient:
             path = f"{path}?{query}"
         return self._request("DELETE", path)
 
-    def add_user(self, username: str, password: str, admin: bool = False) -> dict[str, Any]:
-        return self._request(
-            "POST", "/users", {"username": username, "password": password, "admin": admin}
-        )
+    def add_user(
+        self,
+        username: str,
+        password: str,
+        admin: bool = False,
+        storage_access: list[str] | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "username": username,
+            "password": password,
+            "admin": admin,
+        }
+        if storage_access is not None:
+            body["storage_access"] = list(storage_access)
+        return self._request("POST", "/users", body)
 
     def delete_user(self, username: str) -> dict[str, Any]:
         return self._request("DELETE", f"/users/{username}")
+
+    def set_user_storage_access(self, username: str, storage_access: list[str]) -> dict[str, Any]:
+        path = f"/users/{urllib.parse.quote(username, safe='')}/storage_access"
+        return self._request("POST", path, {"storage_access": list(storage_access)})
+
+    def set_storage_users(self, backend: str, users: list[str]) -> dict[str, Any]:
+        path = f"/storage/{urllib.parse.quote(backend, safe='')}/users"
+        return self._request("POST", path, {"users": list(users)})
+
+    def storage_users(self, backend: str) -> dict[str, Any]:
+        path = f"/storage/{urllib.parse.quote(backend, safe='')}/users"
+        return self._request("GET", path)
 
     def start_filebrowser(self) -> dict[str, Any]:
         return self._request("POST", "/filebrowser/start", {})

@@ -1,0 +1,72 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+      grpc:
+        endpoint: 127.0.0.1:4317
+
+  filelog:
+    include:
+      - /opt/meshdrive/var/log/*.log
+    start_at: end
+    operators:
+      - type: regex_replace
+        field: body
+        regex: 'username=\S+'
+        replace: 'username=REDACTED'
+      - type: regex_replace
+        field: body
+        regex: 'password=\S+'
+        replace: 'password=REDACTED'
+
+  hostmetrics:
+    collection_interval: 60s
+    scrapers:
+      cpu: {}
+      memory: {}
+      disk: {}
+      filesystem:
+        include_mount_points:
+          match_type: regexp
+          mount_points:
+            - "^/opt/meshdrive(/.*)?$"
+
+processors:
+  batch:
+    timeout: 10s
+    send_batch_size: 256
+  resource:
+    attributes:
+      - key: service.name
+        value: meshdrive
+        action: upsert
+      - key: meshdrive.isolation
+        value: /opt/meshdrive
+        action: upsert
+
+exporters:
+  file/logs:
+    path: /opt/meshdrive/var/telemetry/logs.json
+    rotation:
+      max_megabytes: 50
+      max_days: 7
+  file/metrics:
+    path: /opt/meshdrive/var/telemetry/metrics.json
+    rotation:
+      max_megabytes: 50
+      max_days: 7
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    logs:
+      receivers: [otlp, filelog]
+      processors: [batch, resource]
+      exporters: [file/logs]
+    metrics:
+      receivers: [otlp, hostmetrics]
+      processors: [batch, resource]
+      exporters: [file/metrics]

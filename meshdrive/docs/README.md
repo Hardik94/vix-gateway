@@ -9,6 +9,7 @@ MeshDrive 2.0 is a **local-first** Linux storage agent: JuiceFS on local disks, 
 | [Architecture](architecture.md) | Components, data flow, directory layout, isolation model |
 | [Installation](installation.md) | Snap, Flatpak, `.deb`, and developer installs |
 | [Storage](storage.md) | JuiceFS backends, capacity, multi-volume Filebrowser |
+| [User ↔ bucket ACL](storage-acl.md) | Many-to-many assign, portals, TUI (2.2) |
 | [Pinned binaries](binaries.md) | JuiceFS/Filebrowser versions and upgrade plan |
 | [CLI reference](cli-reference.md) | `meshdrive` commands and entry points |
 | [Configuration](configuration.md) | `config.yaml`, `license.yaml`, `cluster.yaml`, environment |

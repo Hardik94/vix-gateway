@@ -23,7 +23,13 @@ from textual.widgets import (
 
 from meshdrive import __version__
 from meshdrive.tui.client import AgentClient, AgentError
-from meshdrive.tui.screens import AddStorageScreen, AddUserScreen, DeleteStorageScreen
+from meshdrive.tui.screens import (
+    AddStorageScreen,
+    AddUserScreen,
+    AssignBucketsScreen,
+    AssignUsersScreen,
+    DeleteStorageScreen,
+)
 
 CSS = """
 Screen {
@@ -53,11 +59,16 @@ DataTable { height: 12; margin: 1 0; }
 }
 ProgressBar { width: 1fr; }
 #dialog {
-    width: 60;
+    width: 70;
     height: auto;
+    max-height: 90%;
     padding: 1 2;
     border: solid $accent;
     background: $panel;
+}
+#bucket-checks, #user-checks {
+    height: 12;
+    margin: 1 0;
 }
 .dialog-title { text-style: bold; margin-bottom: 1; }
 .dialog-buttons { height: auto; margin-top: 1; }
@@ -137,6 +148,7 @@ class MeshDriveTUI(App[None]):
                         Button("Add storage", id="btn-add-storage", variant="primary"),
                         Button("Mount", id="btn-mount"),
                         Button("Unmount", id="btn-unmount"),
+                        Button("Assign users", id="btn-assign-users"),
                         Button("Delete storage", id="btn-del-storage", variant="error"),
                         Button("Start Filebrowser", id="btn-fb-start"),
                         classes="row",
@@ -144,10 +156,15 @@ class MeshDriveTUI(App[None]):
                 )
             with TabPane("Users", id="tab-users"):
                 yield Vertical(
-                    Static("Local users (TUI only — not exposed via MCP)", classes="section"),
+                    Static(
+                        "Local users — assign storage buckets (many-to-many). "
+                        "Filebrowser portal = only assigned buckets.",
+                        classes="section",
+                    ),
                     DataTable(id="users-table"),
                     Horizontal(
                         Button("Add user", id="btn-add-user", variant="primary"),
+                        Button("Assign buckets", id="btn-assign-buckets"),
                         Button("Delete user", id="btn-del-user", variant="error"),
                         classes="row",
                     ),
@@ -166,10 +183,10 @@ class MeshDriveTUI(App[None]):
 
     def on_mount(self) -> None:
         storage = self.query_one("#storage-table", DataTable)
-        storage.add_columns("Name", "Mounted", "Size", "Usage", "Free", "Path")
+        storage.add_columns("Name", "Mounted", "Size", "Usage", "Free", "Users", "Path")
         storage.cursor_type = "row"
         users = self.query_one("#users-table", DataTable)
-        users.add_columns("Username", "Groups", "Storage")
+        users.add_columns("Username", "Groups", "Buckets")
         users.cursor_type = "row"
         self.set_interval(3.0, self.action_refresh)
         self.action_refresh()
@@ -236,16 +253,24 @@ class MeshDriveTUI(App[None]):
 
         table = self.query_one("#storage-table", DataTable)
         table.clear()
+        user_items = (st.get("users") or {}).get("items") or []
         for row in st.get("storage") or []:
             size_label = _size_label(row.get("capacity_gb"))
+            bname = str(row.get("name") or "")
+            members = [
+                str(u.get("username") or "")
+                for u in user_items
+                if bname and bname in (u.get("storage_access") or [])
+            ]
             table.add_row(
-                str(row.get("name") or ""),
+                bname,
                 "yes" if row.get("mounted") else "no",
                 size_label,
                 _bar(int(row.get("usage_percent") or 0)),
                 _fmt_bytes(int(row.get("free_bytes") or 0)),
+                ",".join(members) if members else "—",
                 str(row.get("mount_point") or row.get("data_path") or ""),
-                key=str(row.get("name") or ""),
+                key=bname,
             )
 
         utable = self.query_one("#users-table", DataTable)
@@ -348,8 +373,43 @@ class MeshDriveTUI(App[None]):
             self.push_screen(DeleteStorageScreen(name), self._on_delete_storage)
         elif bid == "btn-fb-start":
             self._call(self.client.start_filebrowser)
+        elif bid == "btn-assign-users":
+            name = self._selected_storage()
+            if not name:
+                self.notify("Select a storage backend", severity="warning")
+                return
+            usernames = [
+                str(u.get("username") or "")
+                for u in (self.state.get("users") or {}).get("items") or []
+                if u.get("username")
+            ]
+            selected = [
+                str(u.get("username") or "")
+                for u in (self.state.get("users") or {}).get("items") or []
+                if name in (u.get("storage_access") or [])
+            ]
+            self.push_screen(
+                AssignUsersScreen(name, usernames, selected),
+                self._on_assign_users,
+            )
         elif bid == "btn-add-user":
-            self.push_screen(AddUserScreen(), self._on_add_user)
+            buckets = [str(r.get("name") or "") for r in self.state.get("storage") or [] if r.get("name")]
+            self.push_screen(AddUserScreen(buckets), self._on_add_user)
+        elif bid == "btn-assign-buckets":
+            name = self._selected_user()
+            if not name:
+                self.notify("Select a user", severity="warning")
+                return
+            buckets = [str(r.get("name") or "") for r in self.state.get("storage") or [] if r.get("name")]
+            selected: list[str] = []
+            for u in (self.state.get("users") or {}).get("items") or []:
+                if u.get("username") == name:
+                    selected = list(u.get("storage_access") or [])
+                    break
+            self.push_screen(
+                AssignBucketsScreen(name, buckets, selected),
+                self._on_assign_buckets,
+            )
         elif bid == "btn-del-user":
             name = self._selected_user()
             if not name:
@@ -394,7 +454,31 @@ class MeshDriveTUI(App[None]):
     def _on_add_user(self, result: dict | None) -> None:
         if not result:
             return
-        self._call(self.client.add_user, result["username"], result["password"], result["admin"])
+        self._call(
+            self.client.add_user,
+            result["username"],
+            result["password"],
+            result["admin"],
+            result.get("storage_access") or [],
+        )
+
+    def _on_assign_buckets(self, result: dict | None) -> None:
+        if not result:
+            return
+        self._call(
+            self.client.set_user_storage_access,
+            result["username"],
+            result.get("storage_access") or [],
+        )
+
+    def _on_assign_users(self, result: dict | None) -> None:
+        if not result:
+            return
+        self._call(
+            self.client.set_storage_users,
+            result["backend"],
+            result.get("users") or [],
+        )
 
     def action_focus_storage(self) -> None:
         self.query_one("#tabs", TabbedContent).active = "tab-storage"

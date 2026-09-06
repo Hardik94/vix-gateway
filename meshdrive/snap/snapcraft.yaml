@@ -1,6 +1,13 @@
+# MeshDrive snap recipe lives in snap/snapcraft.yaml (takes precedence over a
+# root-level file). Part source is the project root (".").
+#
+# LXD packs the project into the build VM. Untracked/gitignored files may be
+# omitted — keep overlay/ + src/ + packaging/ committed, and/or use snap/local/
+# (vendored configs) as a fallback.
+
 name: meshdrive
 base: core22
-version: "2.1.0"
+version: "2.2.1"
 summary: MeshDrive 2.0 local-first storage with optional paid remote tier
 description: |
   MeshDrive 2.0 is a local-first JuiceFS + Filebrowser agent with Textual TUI.
@@ -24,47 +31,110 @@ apps:
     command: bin/meshdrive-agent-wrapper
     daemon: simple
     restart-delay: 5s
+  addons:
+    command: bin/meshdrive-addons-wrapper
+  mcp:
+    command: bin/meshdrive-mcp-wrapper
 
 parts:
   meshdrive:
     plugin: nil
-    source: ..
+    # Project root = parent of snap/ when this file is snap/snapcraft.yaml
+    source: .
     source-type: local
     override-build: |
       set -eux
-      ROOT="${SNAPCRAFT_PART_INSTALL}/opt/meshdrive"
-      DEST="${SNAPCRAFT_PART_INSTALL}/bin"
-      mkdir -p "${ROOT}/etc" "${ROOT}/systemd" "${ROOT}/share/wireguard" "${ROOT}/packaging" "${DEST}"
-      cp -a overlay/opt/meshdrive/etc/. "${ROOT}/etc/"
-      cp -a overlay/opt/meshdrive/systemd/. "${ROOT}/systemd/"
-      if [ -d overlay/opt/meshdrive/share/wireguard ]; then
-        cp -a overlay/opt/meshdrive/share/wireguard/. "${ROOT}/share/wireguard/" || true
-      fi
-      if [ -d ../infra/wireguard-hub-spoke ]; then
-        cp ../infra/wireguard-hub-spoke/clients/node.template/wg0.conf.template "${ROOT}/share/wireguard/" || true
-        cp ../infra/wireguard-hub-spoke/scripts/nft-client.nft "${ROOT}/share/wireguard/" || true
-      fi
-      mkdir -p "${ROOT}/pkg"
-      cp -a src "${ROOT}/pkg/src"
-      cp pyproject.toml README.md "${ROOT}/pkg/"
-      cp packaging/fetch-binaries.sh packaging/setup-runtime.sh packaging/build-vix.sh packaging/stage-wireguard.sh "${ROOT}/packaging/"
-      chmod +x "${ROOT}/packaging/"*.sh
-      python3 -m venv "${ROOT}/venv"
-      "${ROOT}/venv/bin/pip" install --upgrade pip wheel
-      "${ROOT}/venv/bin/pip" install "${ROOT}/pkg"
-      bash "${ROOT}/packaging/fetch-binaries.sh" "${ROOT}" || true
+      PART_SRC="${CRAFT_PART_SRC:-${SNAPCRAFT_PART_SRC:-}}"
+      PROJ="${CRAFT_PROJECT_DIR:-${SNAPCRAFT_PROJECT_DIR:-}}"
+      INSTALL="${CRAFT_PART_INSTALL:-${SNAPCRAFT_PART_INSTALL}}"
 
-      # Pip console scripts embed absolute shebangs from the build host
-      # (/home/.../parts/meshdrive/install/...). Rewrite so they are relocatable.
-      find "${ROOT}/venv/bin" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
-        if head -n1 "$f" | grep -q '^#!'; then
-          sed -i '1s|^#!.*|#!/usr/bin/env python3|' "$f"
+      # Find the MeshDrive package root inside the LXD-packed tree.
+      TREE=""
+      for c in "${PART_SRC}" "${PROJ}" "${PART_SRC}/.." "${PROJ}/.." .; do
+        [ -n "${c}" ] || continue
+        [ -d "${c}" ] || continue
+        if [ -f "${c}/pyproject.toml" ] && [ -d "${c}/src/meshdrive" ]; then
+          TREE="${c}"
+          break
         fi
       done
+      if [ -z "${TREE}" ]; then
+        echo "could not locate MeshDrive tree (pyproject.toml + src/meshdrive)" >&2
+        echo "PART_SRC=${PART_SRC:-} PROJ=${PROJ:-} PWD=$(pwd)" >&2
+        echo "--- PART_SRC listing ---" >&2
+        ls -la "${PART_SRC}" 2>/dev/null || true
+        echo "--- PROJ listing ---" >&2
+        ls -la "${PROJ}" 2>/dev/null || true
+        echo "--- find pyproject (depth 3) ---" >&2
+        find "${PART_SRC:-/nonexistent}" "${PROJ:-/nonexistent}" -maxdepth 3 -name pyproject.toml 2>/dev/null || true
+        exit 1
+      fi
+      echo "Using MeshDrive tree: ${TREE}"
 
-      # Runtime wrappers must expand $SNAP on the target VM — never bake in
-      # SNAPCRAFT_PART_INSTALL. layout maps /opt/meshdrive -> $SNAP_COMMON
-      # (writable state); the venv stays under $SNAP/opt/meshdrive/venv.
+      OVERLAY=""
+      if [ -d "${TREE}/overlay/opt/meshdrive/etc" ]; then
+        OVERLAY="${TREE}/overlay/opt/meshdrive"
+      elif [ -d "${TREE}/snap/local/opt/meshdrive/etc" ]; then
+        OVERLAY="${TREE}/snap/local/opt/meshdrive"
+      fi
+      if [ -z "${OVERLAY}" ]; then
+        echo "missing overlay configs under ${TREE}" >&2
+        echo "need overlay/opt/meshdrive/etc or snap/local/opt/meshdrive/etc" >&2
+        ls -la "${TREE}" >&2 || true
+        ls -la "${TREE}/snap" >&2 || true
+        ls -la "${TREE}/snap/local" >&2 || true
+        exit 1
+      fi
+      echo "Using overlay: ${OVERLAY}"
+
+      if [ ! -d "${TREE}/src/meshdrive" ] || [ ! -f "${TREE}/pyproject.toml" ]; then
+        echo "missing src/meshdrive or pyproject.toml in ${TREE}" >&2
+        exit 1
+      fi
+      if [ ! -f "${TREE}/packaging/fetch-binaries.sh" ]; then
+        echo "missing packaging/fetch-binaries.sh in ${TREE}" >&2
+        exit 1
+      fi
+
+      ROOT="${INSTALL}/opt/meshdrive"
+      DEST="${INSTALL}/bin"
+      mkdir -p "${ROOT}/etc" "${ROOT}/systemd" "${ROOT}/share/wireguard" "${ROOT}/packaging" "${DEST}"
+      cp -a "${OVERLAY}/etc/." "${ROOT}/etc/"
+      if [ -d "${OVERLAY}/systemd" ]; then
+        cp -a "${OVERLAY}/systemd/." "${ROOT}/systemd/"
+      fi
+      if [ -d "${OVERLAY}/share/wireguard" ]; then
+        cp -a "${OVERLAY}/share/wireguard/." "${ROOT}/share/wireguard/" || true
+      fi
+      if [ -d "${TREE}/../infra/wireguard-hub-spoke" ]; then
+        cp "${TREE}/../infra/wireguard-hub-spoke/clients/node.template/wg0.conf.template" "${ROOT}/share/wireguard/" || true
+        cp "${TREE}/../infra/wireguard-hub-spoke/scripts/nft-client.nft" "${ROOT}/share/wireguard/" || true
+      fi
+      mkdir -p "${ROOT}/pkg"
+      cp -a "${TREE}/src" "${ROOT}/pkg/src"
+      cp "${TREE}/pyproject.toml" "${TREE}/README.md" "${ROOT}/pkg/"
+      cp "${TREE}/packaging/fetch-binaries.sh" \
+         "${TREE}/packaging/setup-runtime.sh" \
+         "${TREE}/packaging/build-vix.sh" \
+         "${TREE}/packaging/stage-wireguard.sh" \
+         "${ROOT}/packaging/"
+      chmod +x "${ROOT}/packaging/"*.sh
+
+      # Do NOT use a virtualenv inside the snap: pyvenv.cfg / interpreter paths are
+      # absolute at build time and break after install under /snap/meshdrive/<rev>/.
+      # Install the package + deps into a relocatable directory and run with the
+      # staged interpreter + PYTHONPATH.
+      SITE="${ROOT}/python-packages"
+      mkdir -p "${SITE}"
+      python3 -m pip install --upgrade pip wheel
+      python3 -m pip install --target="${SITE}" "${ROOT}/pkg"
+      PYTHONPATH="${SITE}" python3 -c "import meshdrive; print('meshdrive', meshdrive.__version__)"
+      test -d "${SITE}/meshdrive"
+      # Must succeed: doctor and runtime look under $SNAP/opt/meshdrive/bin.
+      bash "${ROOT}/packaging/fetch-binaries.sh" "${ROOT}"
+      test -x "${ROOT}/bin/juicefs"
+      test -x "${ROOT}/bin/filebrowser"
+
       write_wrapper() {
         _out="$1"
         _module="$2"
@@ -72,15 +142,17 @@ parts:
           echo '#!/bin/sh'
           echo 'set -e'
           echo 'export MESHDRIVE_ROOT="${MESHDRIVE_ROOT:-${SNAP_COMMON}}"'
-          echo 'VENV="${SNAP}/opt/meshdrive/venv"'
-          echo 'PY="${VENV}/bin/python3"'
-          echo 'if [ ! -x "${PY}" ]; then PY="${SNAP}/usr/bin/python3"; fi'
-          echo 'PYVER="$("${PY}" -c '"'"'import sys; print("%d.%d" % sys.version_info[:2])'"'"')"'
-          echo 'export PYTHONPATH="${VENV}/lib/python${PYVER}/site-packages${PYTHONPATH:+:$PYTHONPATH}"'
-          echo 'export PATH="${VENV}/bin:${SNAP}/usr/bin:${PATH:-/usr/bin}"'
+          echo '# layout binds /opt/meshdrive -> $SNAP_COMMON (data). Code lives under $SNAP.'
+          echo 'SITE="${SNAP}/opt/meshdrive/python-packages"'
+          echo 'PY="${SNAP}/usr/bin/python3"'
+          echo 'if [ ! -x "${PY}" ]; then PY="$(command -v python3)"; fi'
+          echo 'export PYTHONPATH="${SITE}${PYTHONPATH:+:$PYTHONPATH}"'
+          echo 'export PATH="${SNAP}/opt/meshdrive/bin:${SNAP}/usr/bin:${PATH:-/usr/bin}"'
           echo "exec \"\${PY}\" -m ${_module} \"\$@\""
         } > "${_out}"
         chmod 755 "${_out}"
+        # Sanity: wrappers must use dotted module names (meshdrive.cli), not hyphens.
+        grep -q " -m ${_module} " "${_out}"
       }
 
       write_wrapper "${DEST}/meshdrive-wrapper" "meshdrive.cli"
@@ -88,9 +160,18 @@ parts:
       write_wrapper "${DEST}/meshdrive-agent-wrapper" "meshdrive.agent"
       write_wrapper "${DEST}/meshdrive-addons-wrapper" "meshdrive.addons"
       write_wrapper "${DEST}/meshdrive-mcp-wrapper" "meshdrive.mcp"
-    stage-packages:
+    build-packages:
       - python3
       - python3-venv
+      - python3-pip
+      - python3-wheel
+      - python3-dev
+      - build-essential
+      - curl
+      - ca-certificates
+      - tar
+    stage-packages:
+      - python3
       - python3-pip
       - fuse3
       - curl

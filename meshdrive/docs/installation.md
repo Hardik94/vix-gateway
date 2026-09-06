@@ -22,26 +22,49 @@ Classic confinement is used so FUSE, WireGuard, and nftables work without strict
 ### Build
 
 ```bash
-cd meshdrive-2.0/snap
+cd meshdrive   # package root (parent of snap/), not only snap/
 # Ensure LXD + group: sudo usermod -aG lxd "$USER" && newgrp lxd
+
+# LXD only packs what is on disk / not craft-ignored. Commit src, packaging,
+# overlay (or rely on snap/local fallback), pyproject.toml:
+#   git add src packaging overlay snap pyproject.toml README.md
+#   git status   # confirm overlay or snap/local is present
+
+snapcraft clean --use-lxd
 snapcraft pack --use-lxd
-# or on a dedicated build VM:
+# or:
 snapcraft pack --destructive-mode
 ```
+
+`override-build` reads `$CRAFT_PART_SRC` and falls back to `snap/local/opt/meshdrive` for configs if `overlay/` was omitted from the LXD pack.
 
 ### Install
 
 ```bash
-sudo snap install --dangerous meshdrive_2.1.0_amd64.snap
+# Local/unsigned builds need --dangerous; this snap is classic confinement.
+sudo snap install --dangerous --classic ./meshdrive_2.2.1_amd64.snap
 snap run meshdrive.doctor
 snap run meshdrive.tui
 ```
 
-After install, wrappers must call `$SNAP/opt/meshdrive/venv/...` — never a builder path like `/home/.../parts/meshdrive/install/...`. If you see that error, rebuild with current `snap/snapcraft.yaml` (2.1.0+).
+After install, wrappers must use `$SNAP/usr/bin/python3 -m meshdrive.cli` with
+`PYTHONPATH=$SNAP/opt/meshdrive/python-packages` (relocatable; no build-time venv).
+JuiceFS / Filebrowser ship under `$SNAP/opt/meshdrive/bin` (not `$SNAP_COMMON/bin`).
+Doctor accepts snap apps (`meshdrive.tui`, `$SNAP/bin/*-wrapper`).
+
+Quick check:
+
+```bash
+head -20 /snap/meshdrive/current/bin/meshdrive-wrapper
+ls /snap/meshdrive/current/opt/meshdrive/python-packages/meshdrive
+ls /snap/meshdrive/current/opt/meshdrive/bin/{juicefs,filebrowser}
+snap run meshdrive --help
+```
 
 ### Data location
 
 All state lives under **`/var/snap/meshdrive/common/`**, mirroring the `/opt/meshdrive` layout (`etc/`, `var/`, `bin/`, `mnt/`).
+Shipped binaries and Python code live under **`/snap/meshdrive/current/opt/meshdrive/`**.
 
 Snap sets `MESHDRIVE_ROOT=$SNAP_COMMON` in app wrappers.
 
@@ -53,6 +76,8 @@ Snap sets `MESHDRIVE_ROOT=$SNAP_COMMON` in app wrappers.
 | Doctor | `snap run meshdrive.doctor` |
 | TUI | `snap run meshdrive.tui` |
 | Agent | `snap run meshdrive.agent` (daemon) |
+| Addons | `snap run meshdrive.addons` |
+| MCP | `snap run meshdrive.mcp` |
 
 ---
 

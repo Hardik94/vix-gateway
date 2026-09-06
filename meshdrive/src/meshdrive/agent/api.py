@@ -13,14 +13,28 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from meshdrive.auth import add_user, delete_user, list_users, remove_storage_access
+from meshdrive.auth import (
+    add_user,
+    delete_user,
+    list_users,
+    remove_storage_access,
+    set_backend_users,
+    set_storage_access,
+    users_for_backend,
+)
 from meshdrive.config import backends, delete_backend, get_backend, load_config, root, save_config, upsert_backend
 from meshdrive.constants import BOOTSTRAP_PASSWORD, CONTROL_HOST, CONTROL_PORT, MNT, ROOT
 from meshdrive.storage.filebrowser import (
     add_filebrowser_user,
     delete_filebrowser_user,
+    set_filebrowser_scope,
     which_filebrowser,
     write_filebrowser_json,
+)
+from meshdrive.storage.homes import ensure_user_private
+from meshdrive.storage.portals import (
+    filebrowser_scope_for_user,
+    remove_user_portal,
 )
 from meshdrive.storage.juicefs import (
     default_backend,
@@ -73,6 +87,12 @@ class AgentAPI:
             return 200, self._mount(body.get("name", ""))
         if method == "POST" and path == "/storage/unmount":
             return 200, self._unmount(body.get("name", ""))
+        if method == "POST" and path.startswith("/storage/") and path.endswith("/users"):
+            name = unquote(path[len("/storage/") : -len("/users")].rstrip("/"))
+            return 200, self._set_storage_users(name, body)
+        if method == "GET" and path.startswith("/storage/") and path.endswith("/users"):
+            name = unquote(path[len("/storage/") : -len("/users")].rstrip("/"))
+            return 200, {"ok": True, "backend": name, "users": users_for_backend(name)}
         if method == "DELETE" and path.startswith("/storage/"):
             name = unquote(path[len("/storage/") :])
             wipe_raw = str((body or {}).get("wipe_data") or "").lower()
@@ -80,6 +100,9 @@ class AgentAPI:
             return 200, self._delete_storage(name, wipe_data=wipe_data)
         if method == "POST" and path == "/users":
             return 200, self._add_user(body)
+        if method == "POST" and path.startswith("/users/") and path.endswith("/storage_access"):
+            username = unquote(path[len("/users/") : -len("/storage_access")].rstrip("/"))
+            return 200, self._set_user_storage_access(username, body)
         if method == "DELETE" and path.startswith("/users/"):
             username = unquote(path[len("/users/") :])
             return 200, self._delete_user(username)
@@ -153,6 +176,14 @@ class AgentAPI:
             systemd.enable_now(systemd.mount_unit(name))
         else:
             mount_backend(backend, foreground=False)
+        # Ensure private dirs exist for users already granted this bucket
+        mount = backend.get("mount_point") or ""
+        if mount:
+            for username in users_for_backend(name):
+                try:
+                    ensure_user_private(mount, username)
+                except OSError:
+                    pass
         self._sync_filebrowser_root()
         return {"ok": True, "mounted": is_mounted(backend["mount_point"]), "state": self.refresh()}
 
@@ -189,6 +220,8 @@ class AgentAPI:
             wipe_backend_data(backend)
         delete_backend(name)
         remove_storage_access(name)
+        # Refresh portals for all users (symlinks to deleted bucket removed)
+        self._rebuild_all_user_portals()
         self._sync_filebrowser_root()
         return {"ok": True, "deleted": name, "wipe_data": wipe_data, "state": self.refresh()}
 
@@ -196,14 +229,23 @@ class AgentAPI:
         username = body.get("username") or ""
         password = body.get("password") or ""
         admin = bool(body.get("admin"))
-        rec = add_user(username, password, admin=admin)
+        raw_access = body.get("storage_access")
+        storage_access: list[str] | None = None
+        if isinstance(raw_access, list):
+            storage_access = [str(x).strip() for x in raw_access if str(x).strip()]
+            self._validate_bucket_names(storage_access)
+        rec = add_user(username, password, admin=admin, storage_access=storage_access)
+        scope = filebrowser_scope_for_user(
+            username,
+            admin=admin,
+            storage_access=list(rec.get("storage_access") or []),
+        )
         unit = systemd.filebrowser_unit()
         was_running = systemd.unit_is_active(unit)
-        # BoltDB is single-writer; stop Filebrowser before CLI user changes.
         if was_running:
             systemd.stop_unit(unit)
         try:
-            add_filebrowser_user(username, password, admin=admin)
+            add_filebrowser_user(username, password, admin=admin, scope=scope)
         except RuntimeError as exc:
             if was_running:
                 try:
@@ -219,10 +261,122 @@ class AgentAPI:
             ) from exc
         if was_running:
             systemd.start_unit(unit)
-        return {"ok": True, "user": rec, "state": self.refresh()}
+        return {"ok": True, "user": rec, "scope": scope, "state": self.refresh()}
+
+    def _set_user_storage_access(self, username: str, body: dict[str, Any]) -> dict[str, Any]:
+        username = username.strip()
+        if not username:
+            raise ValueError("username required")
+        raw = body.get("storage_access")
+        if not isinstance(raw, list):
+            raise ValueError("storage_access must be a list of bucket names")
+        access = [str(x).strip() for x in raw if str(x).strip()]
+        self._validate_bucket_names(access)
+        rec = set_storage_access(username, access)
+        scope = self._apply_user_portal_and_scope(username)
+        return {
+            "ok": True,
+            "user": rec,
+            "scope": scope,
+            "state": self.refresh(),
+        }
+
+    def _set_storage_users(self, name: str, body: dict[str, Any]) -> dict[str, Any]:
+        name = name.strip()
+        if not get_backend(name):
+            raise KeyError(f"unknown backend {name!r}")
+        raw = body.get("users")
+        if not isinstance(raw, list):
+            raise ValueError("users must be a list of usernames")
+        wanted = [str(u).strip() for u in raw if str(u).strip()]
+        known = {u["username"] for u in list_users()}
+        unknown = [u for u in wanted if u not in known]
+        if unknown:
+            raise ValueError(f"unknown users: {', '.join(unknown)}")
+        set_backend_users(name, wanted)
+        # Rebuild portals for everyone (membership may have been removed)
+        touched = self._rebuild_all_user_portals()
+        return {
+            "ok": True,
+            "backend": name,
+            "users": users_for_backend(name),
+            "portals": touched,
+            "state": self.refresh(),
+        }
+
+    def _validate_bucket_names(self, names: list[str]) -> None:
+        known = {str(item.get("name") or "") for item in backends()}
+        bad = [n for n in names if n not in known]
+        if bad:
+            raise ValueError(
+                f"unknown storage bucket(s): {', '.join(bad)}. "
+                "Create/mount storage first, then assign."
+            )
+
+    def _apply_user_portal_and_scope(self, username: str) -> str | None:
+        access: list[str] = []
+        admin = False
+        for user in list_users():
+            if user.get("username") == username:
+                access = list(user.get("storage_access") or [])
+                admin = "admin" in (user.get("groups") or [])
+                break
+        else:
+            raise KeyError(username)
+        scope = filebrowser_scope_for_user(username, admin=admin, storage_access=access)
+        unit = systemd.filebrowser_unit()
+        was_running = systemd.unit_is_active(unit)
+        if was_running:
+            systemd.stop_unit(unit)
+        try:
+            if which_filebrowser():
+                if scope:
+                    set_filebrowser_scope(username, scope)
+                else:
+                    # Admin / unrestricted — scope to global mnt root
+                    set_filebrowser_scope(username, str(MNT))
+        except RuntimeError as exc:
+            if was_running:
+                try:
+                    systemd.start_unit(unit)
+                except RuntimeError:
+                    pass
+            raise RuntimeError(f"Filebrowser scope update failed: {exc}") from exc
+        if was_running:
+            systemd.start_unit(unit)
+        return scope
+
+    def _rebuild_all_user_portals(self) -> dict[str, str | None]:
+        out: dict[str, str | None] = {}
+        unit = systemd.filebrowser_unit()
+        was_running = systemd.unit_is_active(unit)
+        if was_running:
+            systemd.stop_unit(unit)
+        try:
+            for user in list_users():
+                name = str(user.get("username") or "")
+                if not name:
+                    continue
+                admin = "admin" in (user.get("groups") or [])
+                access = list(user.get("storage_access") or [])
+                scope = filebrowser_scope_for_user(name, admin=admin, storage_access=access)
+                try:
+                    if which_filebrowser():
+                        set_filebrowser_scope(name, scope or str(MNT))
+                except RuntimeError:
+                    pass
+                out[name] = scope
+        finally:
+            if was_running:
+                try:
+                    systemd.start_unit(unit)
+                except RuntimeError:
+                    pass
+        return out
 
     def _delete_user(self, username: str) -> dict[str, Any]:
         delete_user(username)
+        remove_user_portal(username)
         unit = systemd.filebrowser_unit()
         was_running = systemd.unit_is_active(unit)
         if was_running:
