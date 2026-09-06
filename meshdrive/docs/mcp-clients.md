@@ -181,17 +181,6 @@ mcp_servers:
     enabled: true
 ```
 
-```yaml
-mcp_servers:
-  meshdrive:
-    command: /opt/data/mcp/meshdrive-mcp
-    args: []
-    env:
-      MESHDRIVE_ROOT: /opt/meshdrive
-      MESHDRIVE_MCP_TRANSPORT: stdio
-    enabled: true
-```
-
 Or JSON-style `mcpServers` if your Hermes build uses that (same command/env as Cursor).
 
 ### SSE URL — must set `transport: sse`

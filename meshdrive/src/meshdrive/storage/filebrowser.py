@@ -131,8 +131,18 @@ def list_filebrowser_usernames(binary: Path | None = None) -> list[str]:
     return names
 
 
-def add_filebrowser_user(username: str, password: str, *, admin: bool = False) -> None:
-    """Create or update a Filebrowser account (password always applied)."""
+def add_filebrowser_user(
+    username: str,
+    password: str,
+    *,
+    admin: bool = False,
+    scope: str | None = None,
+) -> None:
+    """Create or update a Filebrowser account (password always applied).
+
+    ``scope`` limits the UI to a subdirectory (private home). Admins usually
+    keep the global root; non-admins should receive their private path.
+    """
     validate_password(password)
     binary = which_filebrowser()
     if not binary:
@@ -143,9 +153,10 @@ def add_filebrowser_user(username: str, password: str, *, admin: bool = False) -
     # Prefer update when the user already exists so password stays in sync.
     existing = list_filebrowser_usernames(binary)
     if username in existing:
-        proc = _run(
-            [str(binary), "users", "update", username, "-p", password, "-d", str(db)]
-        )
+        cmd = [str(binary), "users", "update", username, "-p", password, "-d", str(db)]
+        if scope:
+            cmd.extend(["--scope", scope])
+        proc = _run(cmd)
         if proc.returncode != 0:
             raise RuntimeError(_combined(proc) or "filebrowser users update failed")
         if admin:
@@ -165,18 +176,51 @@ def add_filebrowser_user(username: str, password: str, *, admin: bool = False) -
     cmd = [str(binary), "users", "add", username, password, "-d", str(db)]
     if admin:
         cmd.append("--perm.admin")
+    if scope:
+        cmd.extend(["--scope", scope])
     proc = _run(cmd)
     if proc.returncode == 0:
         return
     combined = _combined(proc).lower()
     if "already exists" in combined:
-        proc2 = _run(
-            [str(binary), "users", "update", username, "-p", password, "-d", str(db)]
-        )
+        cmd2 = [
+            str(binary),
+            "users",
+            "update",
+            username,
+            "-p",
+            password,
+            "-d",
+            str(db),
+        ]
+        if scope:
+            cmd2.extend(["--scope", scope])
+        proc2 = _run(cmd2)
         if proc2.returncode != 0:
             raise RuntimeError(_combined(proc2) or "filebrowser users update failed")
         return
     raise RuntimeError(_combined(proc) or "filebrowser users add failed")
+
+
+def set_filebrowser_scope(username: str, scope: str) -> None:
+    """Set Filebrowser --scope for an existing user (private home)."""
+    binary = which_filebrowser()
+    if not binary:
+        raise RuntimeError("filebrowser binary not found")
+    proc = _run(
+        [
+            str(binary),
+            "users",
+            "update",
+            username,
+            "--scope",
+            scope,
+            "-d",
+            str(FILEBROWSER_DB),
+        ]
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(_combined(proc) or "filebrowser scope update failed")
 
 
 def delete_filebrowser_user(username: str) -> None:

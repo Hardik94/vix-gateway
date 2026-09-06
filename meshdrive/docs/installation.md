@@ -32,10 +32,12 @@ snapcraft pack --destructive-mode
 ### Install
 
 ```bash
-sudo snap install --dangerous meshdrive_2.0.0_amd64.snap
+sudo snap install --dangerous meshdrive_2.1.0_amd64.snap
 snap run meshdrive.doctor
 snap run meshdrive.tui
 ```
+
+After install, wrappers must call `$SNAP/opt/meshdrive/venv/...` — never a builder path like `/home/.../parts/meshdrive/install/...`. If you see that error, rebuild with current `snap/snapcraft.yaml` (2.1.0+).
 
 ### Data location
 

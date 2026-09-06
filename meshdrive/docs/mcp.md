@@ -47,12 +47,12 @@ The installer does **not** auto-write into `~/.cursor` or Claude config — copy
 
 | Tool | Description |
 |------|-------------|
-| `list_storage_backends` | Names, mount points, usage |
-| `get_storage_stats` | Disk stats for a backend |
-| `read_file` | Read file under allowed paths |
-| `write_file` | Write file under allowed paths |
-| `list_directory` | List directory entries |
-| `get_file_info` | Metadata for a path |
+| `list_storage_backends` | JuiceFS **buckets** (configured mounts only) |
+| `get_storage_stats` | Disk stats for a bucket |
+| `read_file` | Read file under a JuiceFS mount |
+| `write_file` | Write file under a JuiceFS mount |
+| `list_directory` | Omit path → list buckets; else list under a mount |
+| `get_file_info` | Metadata for a path under a mount |
 | `health_check` | MCP + component health |
 
 ### Intentionally blocked

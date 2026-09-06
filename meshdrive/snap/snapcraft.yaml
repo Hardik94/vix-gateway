@@ -1,6 +1,6 @@
 name: meshdrive
 base: core22
-version: "2.0.0"
+version: "2.1.0"
 summary: MeshDrive 2.0 local-first storage with optional paid remote tier
 description: |
   MeshDrive 2.0 is a local-first JuiceFS + Filebrowser agent with Textual TUI.
@@ -53,14 +53,41 @@ parts:
       "${ROOT}/venv/bin/pip" install --upgrade pip wheel
       "${ROOT}/venv/bin/pip" install "${ROOT}/pkg"
       bash "${ROOT}/packaging/fetch-binaries.sh" "${ROOT}" || true
-      for name in meshdrive meshdrive-agent meshdrive-tui meshdrive-addons; do
-        printf '%s\n' \
-          '#!/bin/sh' \
-          'export MESHDRIVE_ROOT="${SNAP_COMMON}"' \
-          "exec ${ROOT}/venv/bin/${name} \"\$@\"" \
-          > "${DEST}/${name}-wrapper"
-        chmod 755 "${DEST}/${name}-wrapper"
+
+      # Pip console scripts embed absolute shebangs from the build host
+      # (/home/.../parts/meshdrive/install/...). Rewrite so they are relocatable.
+      find "${ROOT}/venv/bin" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
+        if head -n1 "$f" | grep -q '^#!'; then
+          sed -i '1s|^#!.*|#!/usr/bin/env python3|' "$f"
+        fi
       done
+
+      # Runtime wrappers must expand $SNAP on the target VM — never bake in
+      # SNAPCRAFT_PART_INSTALL. layout maps /opt/meshdrive -> $SNAP_COMMON
+      # (writable state); the venv stays under $SNAP/opt/meshdrive/venv.
+      write_wrapper() {
+        _out="$1"
+        _module="$2"
+        {
+          echo '#!/bin/sh'
+          echo 'set -e'
+          echo 'export MESHDRIVE_ROOT="${MESHDRIVE_ROOT:-${SNAP_COMMON}}"'
+          echo 'VENV="${SNAP}/opt/meshdrive/venv"'
+          echo 'PY="${VENV}/bin/python3"'
+          echo 'if [ ! -x "${PY}" ]; then PY="${SNAP}/usr/bin/python3"; fi'
+          echo 'PYVER="$("${PY}" -c '"'"'import sys; print("%d.%d" % sys.version_info[:2])'"'"')"'
+          echo 'export PYTHONPATH="${VENV}/lib/python${PYVER}/site-packages${PYTHONPATH:+:$PYTHONPATH}"'
+          echo 'export PATH="${VENV}/bin:${SNAP}/usr/bin:${PATH:-/usr/bin}"'
+          echo "exec \"\${PY}\" -m ${_module} \"\$@\""
+        } > "${_out}"
+        chmod 755 "${_out}"
+      }
+
+      write_wrapper "${DEST}/meshdrive-wrapper" "meshdrive.cli"
+      write_wrapper "${DEST}/meshdrive-tui-wrapper" "meshdrive.tui"
+      write_wrapper "${DEST}/meshdrive-agent-wrapper" "meshdrive.agent"
+      write_wrapper "${DEST}/meshdrive-addons-wrapper" "meshdrive.addons"
+      write_wrapper "${DEST}/meshdrive-mcp-wrapper" "meshdrive.mcp"
     stage-packages:
       - python3
       - python3-venv
