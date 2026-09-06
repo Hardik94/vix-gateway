@@ -10,7 +10,7 @@ from typing import Any
 from meshdrive import __version__
 from meshdrive.config import backends, load_config, root
 from meshdrive.constants import ROOT
-from meshdrive.paths import assert_allowed, is_path_allowed
+from meshdrive.paths import assert_storage_path, is_storage_path
 from meshdrive.storage.juicefs import disk_stats, is_mounted
 
 FORBIDDEN = frozenset(
@@ -78,8 +78,8 @@ def _authorize(name: str, arguments: dict[str, Any]) -> None:
         if backend:
             object_id = f"storage_backend:{backend}"
         else:
-            # Path under ROOT but not a mounted backend: isolation only (no FGA object).
-            assert_allowed(path)
+            # Must be under a JuiceFS bucket; OpenFGA object missing → isolation only.
+            assert_storage_path(path)
             return
     else:
         return
@@ -89,18 +89,24 @@ def _authorize(name: str, arguments: dict[str, Any]) -> None:
 
 
 def list_storage_backends() -> list[dict[str, Any]]:
+    """Return configured JuiceFS storage buckets (not the whole install tree)."""
     cfg = load_config()
     rows = []
     for item in backends(cfg):
-        mount = item.get("mount_point") or ""
+        mount = item.get("mount_point") or item.get("mountpoint") or ""
         stats = disk_stats(mount) if mount else {}
+        name = item.get("name")
         rows.append(
             {
-                "name": item.get("name"),
+                "bucket": name,
+                "name": name,
+                "type": item.get("type") or "juicefs",
                 "mount_point": mount,
                 "mounted": is_mounted(mount) if mount else False,
+                "capacity_gb": item.get("capacity_gb"),
                 "usage_percent": stats.get("usage_percent"),
                 "free_bytes": stats.get("free_bytes"),
+                "total_bytes": stats.get("total_bytes"),
             }
         )
     return rows
@@ -114,7 +120,7 @@ def get_storage_stats(backend_name: str) -> dict[str, Any]:
 
 
 def read_file(path: str, encoding: str = "utf-8") -> dict[str, Any]:
-    target = assert_allowed(path)
+    target = assert_storage_path(path)
     if not target.is_file():
         raise FileNotFoundError(str(target))
     data = target.read_text(encoding=encoding)
@@ -122,19 +128,42 @@ def read_file(path: str, encoding: str = "utf-8") -> dict[str, Any]:
 
 
 def write_file(path: str, content: str) -> dict[str, Any]:
-    target = assert_allowed(path)
+    target = assert_storage_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return {"path": str(target), "size": len(content)}
 
 
-def list_directory(path: str) -> dict[str, Any]:
-    target = assert_allowed(path)
+def list_directory(path: str | None = None) -> dict[str, Any]:
+    """List a JuiceFS bucket path.
+
+    Omit ``path`` (or pass the install root / ``mnt``) to list **storage buckets**
+    only — not ``etc/``, ``var/``, or other install-tree folders.
+    """
+    if path is None or str(path).strip() in {"", ".", str(ROOT), str(ROOT / "mnt")}:
+        entries = []
+        for item in backends():
+            mount = item.get("mount_point") or item.get("mountpoint") or ""
+            if not mount:
+                continue
+            mp = Path(mount)
+            entries.append(
+                {
+                    "name": item.get("name"),
+                    "bucket": item.get("name"),
+                    "path": str(mp),
+                    "type": "bucket",
+                    "mounted": is_mounted(mount),
+                }
+            )
+        return {"path": "buckets", "entries": entries}
+
+    target = assert_storage_path(path)
     if not target.is_dir():
         raise NotADirectoryError(str(target))
     entries = []
     for child in sorted(target.iterdir()):
-        if not is_path_allowed(child):
+        if not is_storage_path(child):
             continue
         entries.append(
             {
@@ -147,7 +176,7 @@ def list_directory(path: str) -> dict[str, Any]:
 
 
 def get_file_info(path: str) -> dict[str, Any]:
-    target = assert_allowed(path)
+    target = assert_storage_path(path)
     if not target.exists():
         raise FileNotFoundError(str(target))
     st = target.stat()
@@ -175,36 +204,39 @@ HANDLERS = {
     "get_storage_stats": lambda args: get_storage_stats(args["backend_name"]),
     "read_file": lambda args: read_file(args["path"], args.get("encoding", "utf-8")),
     "write_file": lambda args: write_file(args["path"], args["content"]),
-    "list_directory": lambda args: list_directory(args["path"]),
+    "list_directory": lambda args: list_directory(args.get("path")),
     "get_file_info": lambda args: get_file_info(args["path"]),
     "health_check": lambda args: health_check(),
     "get_version": lambda args: {"version": __version__},
 }
 
 TOOL_SCHEMAS = {
-    "list_storage_backends": ("List configured JuiceFS backends", {}),
+    "list_storage_backends": (
+        "List JuiceFS storage buckets (configured backends / mounts only)",
+        {},
+    ),
     "get_storage_stats": (
-        "Disk stats for a storage backend",
+        "Disk stats for a storage bucket",
         {"backend_name": {"type": "string"}},
         ["backend_name"],
     ),
     "read_file": (
-        "Read a UTF-8 file inside /opt/meshdrive",
+        "Read a UTF-8 file inside a JuiceFS storage bucket",
         {"path": {"type": "string"}, "encoding": {"type": "string"}},
         ["path"],
     ),
     "write_file": (
-        "Write a UTF-8 file inside /opt/meshdrive",
+        "Write a UTF-8 file inside a JuiceFS storage bucket",
         {"path": {"type": "string"}, "content": {"type": "string"}},
         ["path", "content"],
     ),
     "list_directory": (
-        "List a directory inside /opt/meshdrive",
+        "List JuiceFS buckets (omit path) or entries under a bucket mount path",
         {"path": {"type": "string"}},
-        ["path"],
+        [],
     ),
     "get_file_info": (
-        "Stat a file or directory inside /opt/meshdrive",
+        "Stat a file or directory inside a JuiceFS storage bucket",
         {"path": {"type": "string"}},
         ["path"],
     ),

@@ -14,6 +14,9 @@ MeshDrive 2.0 is a **local-first** Linux storage agent: JuiceFS on local disks, 
 | [Configuration](configuration.md) | `config.yaml`, `license.yaml`, `cluster.yaml`, environment |
 | [Add-ons](addons.md) | Free and paid optional modules |
 | [Licensing](licensing.md) | Free vs paid tier, activation, feature gating |
+| [Identity upgrade](identity-upgrade.md) | Free→paid LDAP hybrid, private homes, shares (2.1) |
+| [Control plane (Authelia/LDAP)](../../authelia-fb-2.0/README.md) | Server-side Authelia + OpenLDAP + license + provision |
+| [Changelog](../CHANGELOG.md) | Release notes |
 | [WireGuard client](wireguard.md) | Hub-spoke VPN setup (paid) |
 | [Paid cluster](paid-cluster.md) | SSSD/LDAP, remote JuiceFS, VIX gateway/FUSE |
 | [Agent API](agent-api.md) | Loopback JSON control API used by the TUI |

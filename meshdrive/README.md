@@ -93,14 +93,10 @@ meshdrive-2.0/
   docs/                # full documentation
 ```
 
-## vs MeshDrive 2.1.0
-
-Do **not** install alongside [`package/meshdrive-dev-local/`](../package/meshdrive-dev-local/) (`meshdrive-agent`). That legacy package uses ZeroTier + remote TiKV from first boot. MeshDrive 2.0 is local-first with optional WireGuard remote.
-
 ## License
 
 Copyright © Vistrix Labs. Product licensing for paid tier features is separate from repository distribution — see [licensing.md](docs/licensing.md) for on-device activation.
 
 ## Version
 
-**2.0.0** — local-first agent, unified CLI, snap-primary packaging, free/paid addon tiers.
+**2.1.0** — MCP JuiceFS buckets, hybrid free→paid identity/LDAP tooling, HTTPS license scaffolding, private/shared homes.

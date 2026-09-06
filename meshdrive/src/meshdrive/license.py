@@ -134,6 +134,60 @@ def require_addon(addon_name: str) -> None:
         raise PermissionError(msg)
 
 
+def _validate_online(token: str) -> dict[str, Any] | None:
+    """Call HTTPS license service when MESHDRIVE_LICENSE_URL is set.
+
+    Returns entitlement dict on success, None if URL unset, raises on failure
+    when MESHDRIVE_LICENSE_STRICT is enabled.
+    """
+    url = os.environ.get("MESHDRIVE_LICENSE_URL", "").strip()
+    if not url:
+        return None
+    import json
+    import ssl
+    import urllib.error
+    import urllib.request
+
+    device_id = os.environ.get("MESHDRIVE_DEVICE_ID", "")
+    payload = json.dumps({"token": token, "device_id": device_id}).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"content-type": "application/json"},
+        method="POST",
+    )
+    ctx = ssl.create_default_context()
+    if os.environ.get("MESHDRIVE_LICENSE_TLS_INSECURE", "").lower() in {"1", "true", "yes"}:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=15) as resp:
+            body = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        try:
+            body = json.loads(exc.read().decode() or "{}")
+        except Exception:
+            body = {"ok": False, "error": str(exc)}
+        raise ValueError(body.get("error") or f"license server HTTP {exc.code}") from exc
+    except Exception as exc:
+        raise ValueError(f"license server unreachable: {exc}") from exc
+    if not body.get("ok") or body.get("tier") != "paid":
+        raise ValueError(body.get("error") or "license validation failed")
+    feats = body.get("features") or [
+        "wireguard",
+        "vix_gateway",
+        "vix_fuse",
+        "sssd",
+        "remote_cluster",
+    ]
+    return {
+        "tier": "paid",
+        "features": list(feats),
+        "org_id": body.get("org_id"),
+        "expires_at": body.get("expires_at"),
+    }
+
+
 def activate(token: str) -> dict[str, Any]:
     token = token.strip()
     if not token:
@@ -141,11 +195,21 @@ def activate(token: str) -> dict[str, Any]:
 
     strict = os.environ.get("MESHDRIVE_LICENSE_STRICT", "").lower() in {"1", "true", "yes"}
     feat: list[str] = []
+    online_meta: dict[str, Any] = {}
 
-    if not strict and token in _DEV_TOKENS:
+    # Prefer online entitlement when URL is configured.
+    try:
+        online = _validate_online(token)
+    except ValueError:
+        if strict or os.environ.get("MESHDRIVE_LICENSE_URL", "").strip():
+            raise
+        online = None
+    if online:
+        feat = list(online.get("features") or [])
+        online_meta = {k: online[k] for k in ("org_id", "expires_at") if k in online}
+    elif not strict and token in _DEV_TOKENS:
         feat = list(_DEV_TOKENS[token])
     elif token.startswith("MESHDRIVE_PAID_"):
-        # Signed-style token: MESHDRIVE_PAID_<hexsig> or dev prefix
         if token in _DEV_TOKENS:
             feat = list(_DEV_TOKENS[token])
         else:
@@ -164,6 +228,7 @@ def activate(token: str) -> dict[str, Any]:
         "token_hash": _hash_token(token),
         "activated_at": _now_iso(),
         "features": feat,
+        **online_meta,
     }
     save_license(data)
     return data

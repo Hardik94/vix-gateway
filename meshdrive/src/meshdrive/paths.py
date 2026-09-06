@@ -28,6 +28,25 @@ def isolation_roots() -> list[Path]:
     return roots
 
 
+def storage_mount_roots() -> list[Path]:
+    """Configured JuiceFS mount points (storage buckets) that agents may browse."""
+    try:
+        from meshdrive.config import backends
+
+        mounts: list[Path] = []
+        for item in backends():
+            mount = item.get("mount_point") or item.get("mountpoint") or ""
+            if not mount:
+                continue
+            try:
+                mounts.append(Path(mount).expanduser().resolve())
+            except OSError:
+                continue
+        return mounts
+    except Exception:
+        return []
+
+
 def is_path_allowed(path: str | Path) -> bool:
     try:
         target = Path(path).expanduser().resolve()
@@ -42,11 +61,37 @@ def is_path_allowed(path: str | Path) -> bool:
     return False
 
 
+def is_storage_path(path: str | Path) -> bool:
+    """True if path is under a configured JuiceFS mount (storage bucket)."""
+    try:
+        target = Path(path).expanduser().resolve()
+    except OSError:
+        return False
+    for mount in storage_mount_roots():
+        try:
+            target.relative_to(mount)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 def assert_allowed(path: str | Path) -> Path:
     target = Path(path).expanduser().resolve()
     if not is_path_allowed(target):
         raise PermissionError(
             f"path is outside MeshDrive isolation ({ROOT}): {target}"
+        )
+    return target
+
+
+def assert_storage_path(path: str | Path) -> Path:
+    """Require path under a JuiceFS storage bucket mount (not bare ROOT/etc/var)."""
+    target = assert_allowed(path)
+    if not is_storage_path(target):
+        mounts = ", ".join(str(m) for m in storage_mount_roots()) or "(none configured)"
+        raise PermissionError(
+            f"path is outside JuiceFS storage buckets; use a mount under: {mounts}"
         )
     return target
 
