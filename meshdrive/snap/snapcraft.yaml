@@ -7,7 +7,7 @@
 
 name: meshdrive
 base: core22
-version: "2.2.1"
+version: "2.2.5"
 summary: MeshDrive 2.0 local-first storage with optional paid remote tier
 description: |
   MeshDrive 2.0 is a local-first JuiceFS + Filebrowser agent with Textual TUI.
@@ -15,26 +15,41 @@ description: |
   Paid tier (license token): WireGuard hub-spoke, VIX gateway/FUSE, SSSD/LDAP, remote cluster.
 
 grade: devel
-confinement: classic
+confinement: strict
 
+# Same recipe builds both arches. Pack on each arch (or Launchpad remote-build):
+#   snapcraft pack --build-for=amd64
+#   snapcraft pack --build-for=arm64
 architectures:
-  - build-on: amd64
+  - build-on: [amd64]
+    build-for: [amd64]
+  - build-on: [arm64]
+    build-for: [arm64]
 
 apps:
   meshdrive:
     command: bin/meshdrive-wrapper
+    plugs: [network, network-bind]
   doctor:
     command: bin/meshdrive-wrapper doctor
+    plugs: [network, network-bind]
   tui:
     command: bin/meshdrive-tui-wrapper
+    plugs: [network, network-bind]
   agent:
     command: bin/meshdrive-agent-wrapper
     daemon: simple
+    install-mode: enable
+    restart-condition: always
     restart-delay: 5s
+    # Required if confinement is ever strict; harmless on classic.
+    plugs: [network, network-bind]
   addons:
     command: bin/meshdrive-addons-wrapper
+    plugs: [network, network-bind]
   mcp:
     command: bin/meshdrive-mcp-wrapper
+    plugs: [network, network-bind]
 
 parts:
   meshdrive:
@@ -141,13 +156,20 @@ parts:
         {
           echo '#!/bin/sh'
           echo 'set -e'
-          echo 'export MESHDRIVE_ROOT="${MESHDRIVE_ROOT:-${SNAP_COMMON}}"'
-          echo '# layout binds /opt/meshdrive -> $SNAP_COMMON (data). Code lives under $SNAP.'
+          echo '# Prefer $SNAP_COMMON for data (avoids host /opt/meshdrive from a prior .deb).'
+          echo 'export MESHDRIVE_ROOT="${MESHDRIVE_ROOT:-${SNAP_COMMON:-/opt/meshdrive}}"'
+          echo '# Force IPv4 loopback — "localhost" can hit ::1 and EACCES under snap.'
+          echo 'export MESHDRIVE_CONTROL_HOST="${MESHDRIVE_CONTROL_HOST:-127.0.0.1}"'
           echo 'SITE="${SNAP}/opt/meshdrive/python-packages"'
           echo 'PY="${SNAP}/usr/bin/python3"'
           echo 'if [ ! -x "${PY}" ]; then PY="$(command -v python3)"; fi'
           echo 'export PYTHONPATH="${SITE}${PYTHONPATH:+:$PYTHONPATH}"'
           echo 'export PATH="${SNAP}/opt/meshdrive/bin:${SNAP}/usr/bin:${PATH:-/usr/bin}"'
+          echo 'export HOME="${MESHDRIVE_ROOT}/var"'
+          echo 'export XDG_CONFIG_HOME="${MESHDRIVE_ROOT}/var/xdg-config"'
+          echo 'export XDG_DATA_HOME="${MESHDRIVE_ROOT}/var/xdg-data"'
+          echo 'mkdir -p "${MESHDRIVE_ROOT}/var/log" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" 2>/dev/null || true'
+          echo '# Capture early failures for: journalctl -u snap.meshdrive.agent'
           echo "exec \"\${PY}\" -m ${_module} \"\$@\""
         } > "${_out}"
         chmod 755 "${_out}"

@@ -13,6 +13,8 @@ from meshdrive.constants import (
     AUTH_PATH,
     BIN,
     CONFIG_PATH,
+    CONTROL_HOST,
+    CONTROL_PORT,
     FILEBROWSER_BIN_CANDIDATES,
     JUICEFS_BIN_CANDIDATES,
     LICENSE_PATH,
@@ -26,6 +28,7 @@ from meshdrive.constants import (
     ensure_runtime_dirs,
 )
 from meshdrive.license import status_dict
+from meshdrive.agent import systemd as agent_systemd
 
 # Host /usr/local names vs snap app names exposed under /snap/bin
 _CLI_ALIASES: dict[str, tuple[str, ...]] = {
@@ -97,6 +100,25 @@ def _check_python_env() -> dict[str, Any]:
     }
 
 
+def _check_agent_http() -> dict[str, Any]:
+    import urllib.error
+    import urllib.request
+
+    url = f"http://{CONTROL_HOST}:{CONTROL_PORT}/health"
+    try:
+        with urllib.request.urlopen(url, timeout=2) as resp:
+            ok = 200 <= getattr(resp, "status", 200) < 300
+            return {"ok": ok, "url": url, "status": getattr(resp, "status", 200)}
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return {"ok": False, "url": url, "error": str(exc)}
+
+
+def _agent_start_hint() -> str:
+    from meshdrive.agent.systemd import agent_start_hint
+
+    return agent_start_hint()
+
+
 def _check_systemd_unit(name: str) -> dict[str, Any]:
     if not shutil.which("systemctl"):
         return {"available": False}
@@ -137,13 +159,29 @@ def run(verbose: bool = False) -> dict[str, Any]:
         else:
             issues.append("python venv missing or broken")
 
+    from meshdrive.constants import FILEBROWSER_DB, CONTROL_LOG
+    from meshdrive.runtime_paths import is_readonly_snap_path, is_revision_data_path
+
+    fb_db = FILEBROWSER_DB
+    if not fb_db.is_file():
+        issues.append(f"filebrowser.db missing ({fb_db})")
+    elif is_readonly_snap_path(fb_db) or is_revision_data_path(fb_db):
+        issues.append(f"filebrowser.db under wrong snap path ({fb_db})")
+
+    log_dir = VAR / "log"
+    if is_readonly_snap_path(log_dir) or is_revision_data_path(log_dir):
+        issues.append(f"log dir under wrong snap path ({log_dir})")
+
     lic = status_dict()
-    agent = _check_systemd_unit("meshdrive-agent.service")
-    if SNAP:
-        # Classic snap runs agent as snap daemon, not host systemd unit.
-        snap_agent = _check_systemd_unit("snap.meshdrive.agent.service")
-        if snap_agent.get("available"):
-            agent = {**snap_agent, "unit": "snap.meshdrive.agent.service"}
+    agent_unit = agent_systemd.agent_unit()
+    agent = _check_systemd_unit(agent_unit)
+    agent["unit"] = agent_unit
+    agent_http = _check_agent_http()
+    if not agent_http.get("ok"):
+        issues.append(f"agent not listening on {CONTROL_HOST}:{CONTROL_PORT} — {_agent_start_hint()}")
+    elif agent.get("available") and not agent.get("ok"):
+        # HTTP ok but unit inactive is odd; still note unit state.
+        pass
 
     snap = {
         "SNAP": os.environ.get("SNAP"),
@@ -173,6 +211,10 @@ def run(verbose: bool = False) -> dict[str, Any]:
         "venv": py_env,  # keep key for older tooling; mode distinguishes snap
         "python_env": py_env,
         "agent_service": agent,
+        "agent_http": agent_http,
+        "agent_start_hint": _agent_start_hint(),
+        "filebrowser_db": str(FILEBROWSER_DB),
+        "control_log": str(CONTROL_LOG),
         "snap": snap,
         "share": str(SHARE),
         "issues": issues,
@@ -212,7 +254,18 @@ def print_report(report: dict[str, Any]) -> None:
     print(f"  {label}: {'ok' if py_env.get('ok') else 'missing'} ({py_env.get('path')})")
     agent = report.get("agent_service") or {}
     if agent.get("available"):
-        print(f"  agent service: {agent.get('active', 'unknown')}")
+        unit = agent.get("unit") or "meshdrive-agent.service"
+        print(f"  agent service ({unit}): {agent.get('active', 'unknown')}")
+    http = report.get("agent_http") or {}
+    mark = "✓" if http.get("ok") else "✗"
+    print(f"  agent http: {mark} {http.get('url', '')}")
+    fb_db = report.get("filebrowser_db")
+    if fb_db:
+        exists = Path(fb_db).is_file()
+        print(f"  filebrowser.db: {'✓' if exists else '✗'} {fb_db}")
+    clog = report.get("control_log")
+    if clog:
+        print(f"  agent log: {clog}")
     snap = report.get("snap") or {}
     if snap.get("SNAP"):
         print(f"  snap: {snap.get('SNAP')} common={snap.get('SNAP_COMMON')}")

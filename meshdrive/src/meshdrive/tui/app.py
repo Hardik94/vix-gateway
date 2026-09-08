@@ -204,10 +204,16 @@ class MeshDriveTUI(App[None]):
             self.offline = True
             self.state = {}
             banner = self.query_one("#banner", Static)
-            banner.update(
-                f"[bold red]Agent offline[/]  {exc}\n"
-                "Start it with:  sudo systemctl start meshdrive-agent.service"
-            )
+            from meshdrive.agent.systemd import agent_start_hint, snap_installed
+
+            if snap_installed():
+                hint = (
+                    "Snap unit is snap.meshdrive.agent.service (not meshdrive-agent).\n"
+                    f"Start it with:  {agent_start_hint()}"
+                )
+            else:
+                hint = f"Start it with:  {agent_start_hint()}"
+            banner.update(f"[bold red]Agent offline[/]  {exc}\n{hint}")
             return
         await self._render()
 

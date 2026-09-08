@@ -17,9 +17,14 @@ PINNED_FILEBROWSER_VERSION = "2.63.23"
 def _resolve_root() -> Path:
     if os.environ.get("MESHDRIVE_ROOT"):
         return Path(os.environ["MESHDRIVE_ROOT"])
+    # Snap: always prefer $SNAP_COMMON (real writable dir). Do not rely on the
+    # /opt/meshdrive layout bind — a host /opt/meshdrive from a prior .deb can
+    # break the agent. Never use $SNAP (read-only) or $SNAP_DATA (per-rev).
     snap_common = os.environ.get("SNAP_COMMON")
     if snap_common:
         return Path(snap_common)
+    if os.environ.get("SNAP"):
+        return Path("/var/snap/meshdrive/common")
     # Flatpak: XDG_DATA_HOME is ~/.var/app/<app-id>/data when FLATPAK_ID is set
     if os.environ.get("FLATPAK_ID"):
         xdg_data = os.environ.get("XDG_DATA_HOME")
@@ -72,6 +77,20 @@ WG_STATE = VAR / "wireguard" / "state.json"
 
 CONTROL_HOST = os.environ.get("MESHDRIVE_CONTROL_HOST", "127.0.0.1")
 CONTROL_PORT = int(os.environ.get("MESHDRIVE_CONTROL_PORT", "12700"))
+
+
+def control_bind_host(host: str | None = None) -> str:
+    """Normalize agent bind address to IPv4 loopback (snap-safe).
+
+    ``localhost`` can resolve to IPv6 (::1) and fail with EACCES under some
+    snap/AppArmor setups. Keep the control API on ``127.0.0.1`` unless an
+    explicit non-loopback host is configured.
+    """
+    raw = (host if host is not None else CONTROL_HOST) or "127.0.0.1"
+    h = str(raw).strip().lower()
+    if h in {"", "localhost", "::1", "[::1]", "*"}:
+        return "127.0.0.1"
+    return str(raw).strip()
 
 # Filebrowser default --minimumPasswordLength (v2.32+)
 FILEBROWSER_MIN_PASSWORD_LENGTH = 12

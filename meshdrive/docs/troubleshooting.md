@@ -163,7 +163,11 @@ meshdrive wireguard status
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Data not in `/opt/meshdrive` | Expected — snap uses `$SNAP_COMMON` | Use `/var/snap/meshdrive/common` |
+| `Permission denied` on `:12700` (errno 13) | Snap not classic, or bound as `localhost`/IPv6 | Reinstall with `--classic`; `snap info meshdrive \| grep confinement` must say classic; bind is `127.0.0.1` |
+| Agent not running / TUI offline | Snap daemon not started | `sudo snap start meshdrive.agent` (unit: `snap.meshdrive.agent.service` — **not** `meshdrive-agent`) |
+| `Unit meshdrive-agent.service not found` | Expected on snap | Use `sudo snap start meshdrive.agent` |
+| `filebrowser.db` missing / wrong path | Paths under `$SNAP` or `$SNAP_DATA` | Expect `/opt/meshdrive/var/filebrowser.db` (→ `$SNAP_COMMON`); rebuild 2.2.3+ or `sudo snap restart meshdrive.agent` |
+| Data not in `/opt/meshdrive` | Expected — snap uses `$SNAP_COMMON` via layout | Use `/var/snap/meshdrive/common` or `/opt/meshdrive` inside snap |
 | FUSE/WG issues | Classic snap still needs host fuse | Install host `fuse3`; run WG with sudo on host |
 | Command not on PATH | Snap apps not aliased | `snap run meshdrive.doctor` |
 

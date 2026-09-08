@@ -23,13 +23,15 @@ from meshdrive.auth import (
     users_for_backend,
 )
 from meshdrive.config import backends, delete_backend, get_backend, load_config, root, save_config, upsert_backend
-from meshdrive.constants import BOOTSTRAP_PASSWORD, CONTROL_HOST, CONTROL_PORT, MNT, ROOT
+from meshdrive.constants import BOOTSTRAP_PASSWORD, CONTROL_HOST, CONTROL_PORT, MNT, ROOT, control_bind_host
 from meshdrive.storage.filebrowser import (
     add_filebrowser_user,
     delete_filebrowser_user,
+    filebrowser_process_running,
     set_filebrowser_scope,
+    start_filebrowser_process,
+    stop_filebrowser_process,
     which_filebrowser,
-    write_filebrowser_json,
 )
 from meshdrive.storage.homes import ensure_user_private
 from meshdrive.storage.portals import (
@@ -60,6 +62,42 @@ class AgentAPI:
         state = collect_state()
         save_state(state)
         return state
+
+    def _filebrowser_is_running(self) -> bool:
+        if systemd.use_host_units():
+            return systemd.unit_is_active(systemd.filebrowser_unit())
+        return filebrowser_process_running()
+
+    def _filebrowser_stop_service(self) -> None:
+        if systemd.use_host_units():
+            systemd.stop_unit(systemd.filebrowser_unit())
+        else:
+            stop_filebrowser_process()
+
+    def _filebrowser_start_service(self) -> None:
+        if systemd.use_host_units():
+            unit_src = ROOT / "systemd" / "meshdrive-filebrowser.service"
+            if not unit_src.is_file():
+                cand = (
+                    Path(__file__).resolve().parents[3]
+                    / "overlay"
+                    / "opt"
+                    / "meshdrive"
+                    / "systemd"
+                    / "meshdrive-filebrowser.service"
+                )
+                if cand.is_file():
+                    unit_src = cand
+            if unit_src.is_file():
+                dest = Path("/etc/systemd/system/meshdrive-filebrowser.service")
+                try:
+                    shutil.copy2(unit_src, dest)
+                    systemd.systemctl("daemon-reload")
+                except OSError:
+                    pass
+            systemd.enable_now(systemd.filebrowser_unit())
+            return
+        start_filebrowser_process()
 
     def handle(self, method: str, path: str, body: dict[str, Any] | None) -> tuple[int, dict[str, Any]]:
         with self._lock:
@@ -109,7 +147,7 @@ class AgentAPI:
         if method == "POST" and path == "/filebrowser/start":
             return 200, self._filebrowser_start()
         if method == "POST" and path == "/filebrowser/stop":
-            systemd.stop_unit(systemd.filebrowser_unit())
+            self._filebrowser_stop_service()
             return 200, {"ok": True, "state": self.refresh()}
         if method == "POST" and path == "/settings":
             return 200, self._save_settings(body)
@@ -172,8 +210,11 @@ class AgentAPI:
                 upsert_backend(backend)
             except RuntimeError:
                 pass
-        if systemd.systemd_available():
-            systemd.enable_now(systemd.mount_unit(name))
+        if systemd.use_host_units():
+            try:
+                systemd.enable_now(systemd.mount_unit(name))
+            except RuntimeError:
+                mount_backend(backend, foreground=False)
         else:
             mount_backend(backend, foreground=False)
         # Ensure private dirs exist for users already granted this bucket
@@ -191,7 +232,7 @@ class AgentAPI:
         backend = get_backend(name)
         if not backend:
             raise KeyError(f"unknown backend {name!r}")
-        if systemd.systemd_available():
+        if systemd.use_host_units():
             systemd.stop_unit(systemd.mount_unit(name))
         try:
             unmount_backend(backend)
@@ -205,7 +246,7 @@ class AgentAPI:
         if not backend:
             raise KeyError(f"unknown backend {name!r}")
         unit = systemd.mount_unit(name)
-        if systemd.systemd_available():
+        if systemd.use_host_units():
             systemd.stop_unit(unit)
             systemd.disable_unit(unit)
         if is_mounted(backend["mount_point"]):
@@ -240,16 +281,15 @@ class AgentAPI:
             admin=admin,
             storage_access=list(rec.get("storage_access") or []),
         )
-        unit = systemd.filebrowser_unit()
-        was_running = systemd.unit_is_active(unit)
+        was_running = self._filebrowser_is_running()
         if was_running:
-            systemd.stop_unit(unit)
+            self._filebrowser_stop_service()
         try:
             add_filebrowser_user(username, password, admin=admin, scope=scope)
         except RuntimeError as exc:
             if was_running:
                 try:
-                    systemd.start_unit(unit)
+                    self._filebrowser_start_service()
                 except RuntimeError:
                     pass
             raise RuntimeError(
@@ -260,7 +300,7 @@ class AgentAPI:
                 "sudo systemctl start meshdrive-filebrowser"
             ) from exc
         if was_running:
-            systemd.start_unit(unit)
+            self._filebrowser_start_service()
         return {"ok": True, "user": rec, "scope": scope, "state": self.refresh()}
 
     def _set_user_storage_access(self, username: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -324,10 +364,9 @@ class AgentAPI:
         else:
             raise KeyError(username)
         scope = filebrowser_scope_for_user(username, admin=admin, storage_access=access)
-        unit = systemd.filebrowser_unit()
-        was_running = systemd.unit_is_active(unit)
+        was_running = self._filebrowser_is_running()
         if was_running:
-            systemd.stop_unit(unit)
+            self._filebrowser_stop_service()
         try:
             if which_filebrowser():
                 if scope:
@@ -338,20 +377,19 @@ class AgentAPI:
         except RuntimeError as exc:
             if was_running:
                 try:
-                    systemd.start_unit(unit)
+                    self._filebrowser_start_service()
                 except RuntimeError:
                     pass
             raise RuntimeError(f"Filebrowser scope update failed: {exc}") from exc
         if was_running:
-            systemd.start_unit(unit)
+            self._filebrowser_start_service()
         return scope
 
     def _rebuild_all_user_portals(self) -> dict[str, str | None]:
         out: dict[str, str | None] = {}
-        unit = systemd.filebrowser_unit()
-        was_running = systemd.unit_is_active(unit)
+        was_running = self._filebrowser_is_running()
         if was_running:
-            systemd.stop_unit(unit)
+            self._filebrowser_stop_service()
         try:
             for user in list_users():
                 name = str(user.get("username") or "")
@@ -369,7 +407,7 @@ class AgentAPI:
         finally:
             if was_running:
                 try:
-                    systemd.start_unit(unit)
+                    self._filebrowser_start_service()
                 except RuntimeError:
                     pass
         return out
@@ -377,16 +415,15 @@ class AgentAPI:
     def _delete_user(self, username: str) -> dict[str, Any]:
         delete_user(username)
         remove_user_portal(username)
-        unit = systemd.filebrowser_unit()
-        was_running = systemd.unit_is_active(unit)
+        was_running = self._filebrowser_is_running()
         if was_running:
-            systemd.stop_unit(unit)
+            self._filebrowser_stop_service()
         try:
             delete_filebrowser_user(username)
         finally:
             if was_running:
                 try:
-                    systemd.start_unit(unit)
+                    self._filebrowser_start_service()
                 except RuntimeError:
                     pass
         return {"ok": True, "state": self.refresh()}
@@ -397,26 +434,18 @@ class AgentAPI:
         self._sync_filebrowser_root()
         self._ensure_local_hostname()
         self._ensure_bootstrap_admin()
-        if systemd.systemd_available():
-            # Refresh unit (LAN bind; no IPAddressDeny) from overlay if present.
-            unit_src = ROOT / "systemd" / "meshdrive-filebrowser.service"
-            if not unit_src.is_file():
-                cand = Path(__file__).resolve().parents[3] / "overlay" / "opt" / "meshdrive" / "systemd" / "meshdrive-filebrowser.service"
-                if cand.is_file():
-                    unit_src = cand
-            if unit_src.is_file():
-                dest = Path("/etc/systemd/system/meshdrive-filebrowser.service")
-                try:
-                    shutil.copy2(unit_src, dest)
-                    systemd.systemctl("daemon-reload")
-                except OSError:
-                    pass
-            systemd.enable_now(systemd.filebrowser_unit())
+        self._filebrowser_start_service()
         return {"ok": True, "state": self.refresh()}
 
     def _ensure_local_hostname(self) -> None:
         """Best-effort: meshdrive.local in /etc/hosts (+ Avahi if present)."""
         script = ROOT / "packaging" / "ensure-local-hostname.sh"
+        if not script.is_file():
+            snap = os.environ.get("SNAP")
+            if snap:
+                cand = Path(snap) / "opt" / "meshdrive" / "packaging" / "ensure-local-hostname.sh"
+                if cand.is_file():
+                    script = cand
         if not script.is_file():
             alt = Path(__file__).resolve().parents[3] / "packaging" / "ensure-local-hostname.sh"
             if alt.is_file():
@@ -455,10 +484,9 @@ class AgentAPI:
             add_user("admin", password, admin=True)
         except ValueError:
             pass
-        unit = systemd.filebrowser_unit()
-        was_running = systemd.unit_is_active(unit)
+        was_running = self._filebrowser_is_running()
         if was_running:
-            systemd.stop_unit(unit)
+            self._filebrowser_stop_service()
         try:
             add_filebrowser_user("admin", password, admin=True)
         except RuntimeError:
@@ -466,29 +494,15 @@ class AgentAPI:
         finally:
             if was_running:
                 try:
-                    systemd.start_unit(unit)
+                    self._filebrowser_start_service()
                 except RuntimeError:
                     pass
 
     def _sync_filebrowser_root(self) -> None:
         """One Filebrowser instance serves all volumes under $ROOT/mnt/<name>/."""
-        cfg = load_config()
-        md = root(cfg)
-        fb = md.setdefault("filebrowser", {})
-        MNT.mkdir(parents=True, exist_ok=True)
-        root_path = str(MNT)
-        fb["root"] = root_path
-        fb.setdefault("hostname", "meshdrive.local")
-        # Empty string = all interfaces (dual-stack). Keep explicit loopback if set.
-        if "address" not in fb:
-            fb["address"] = ""
-        save_config(cfg)
-        write_filebrowser_json(
-            address=str(fb.get("address") if fb.get("address") is not None else ""),
-            port=int(fb.get("port") or 8080),
-            root=str(root_path),
-            database=str(fb.get("database") or ""),
-        )
+        from meshdrive.runtime_paths import rewrite_runtime_config_paths
+
+        rewrite_runtime_config_paths()
 
     def _install_addons(self, body: dict[str, Any]) -> dict[str, Any]:
         names = list(body.get("names") or [])
@@ -578,7 +592,24 @@ def make_handler(api: AgentAPI) -> type[BaseHTTPRequestHandler]:
 
 def serve(api: AgentAPI, host: str = CONTROL_HOST, port: int = CONTROL_PORT) -> ThreadingHTTPServer:
     handler = make_handler(api)
-    httpd = ThreadingHTTPServer((host, port), handler)
+    bind_host = control_bind_host(host)
+    try:
+        httpd = ThreadingHTTPServer((bind_host, int(port)), handler)
+    except PermissionError as exc:
+        raise OSError(
+            13,
+            f"permission denied binding {bind_host}:{port} "
+            f"(snap needs --classic or network-bind; do not use host 'localhost')",
+        ) from exc
+    except OSError as exc:
+        if getattr(exc, "errno", None) == 13:
+            raise OSError(
+                13,
+                f"permission denied binding {bind_host}:{port} "
+                f"(install with: sudo snap install --dangerous --classic ./meshdrive_*.snap; "
+                f"then: sudo snap start meshdrive.agent)",
+            ) from exc
+        raise
     thread = threading.Thread(target=httpd.serve_forever, name="meshdrive-api", daemon=True)
     thread.start()
     return httpd

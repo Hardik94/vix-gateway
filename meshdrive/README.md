@@ -103,5 +103,8 @@ Copyright © Vistrix Labs. Product licensing for paid tier features is separate 
 
 ## Version
 
+**2.2.4** — agent start harden; snap amd64+arm64; data on `$SNAP_COMMON`.
+**2.2.3** — snap filebrowser.db + logs on `/opt/meshdrive` (layout → `$SNAP_COMMON`).
+**2.2.2** — snap agent auto-start; in-process mount/Filebrowser under snap.
 **2.2.1** — snap doctor/binary paths; JuiceFS+Filebrowser under `$SNAP`.
 **2.2.0** — user↔bucket ACL, Filebrowser portals, TUI assign users/buckets.
