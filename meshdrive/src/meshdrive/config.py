@@ -12,7 +12,7 @@ from meshdrive.constants import AUTH_PATH, CONFIG_PATH, MNT, ROOT, VAR
 
 _EMPTY = {
     "meshdrive": {
-        "version": "2.1.0",
+        "version": "2.2.5",
         "mode": "local",
         "storage": {"backends": []},
         "filebrowser": {

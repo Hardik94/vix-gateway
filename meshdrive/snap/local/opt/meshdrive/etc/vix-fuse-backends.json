@@ -1,0 +1,10 @@
+{
+  "backends": [
+    {
+      "name": "remote-primary",
+      "gateway": "https://10.200.22.10:9443",
+      "mountpoint": "/opt/meshdrive/mnt/vix-remote",
+      "comment": "Gateway IP must be inside WireGuard overlay (not public internet)"
+    }
+  ]
+}

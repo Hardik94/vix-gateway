@@ -1,7 +1,7 @@
 name: "meshdrive"
 arch: "amd64"
 platform: "linux"
-version: "2.1.0"
+version: "2.2.5"
 section: "utils"
 priority: "optional"
 maintainer: "Vistrix Labs - Meshdrive <info@vistrix.in>"

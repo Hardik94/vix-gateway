@@ -13,6 +13,7 @@ from meshdrive.constants import (
     FILEBROWSER_DB,
     FILEBROWSER_JSON,
     FILEBROWSER_MIN_PASSWORD_LENGTH,
+    VAR,
 )
 
 MIN_PASSWORD_LENGTH = FILEBROWSER_MIN_PASSWORD_LENGTH
@@ -228,3 +229,79 @@ def delete_filebrowser_user(username: str) -> None:
     if not binary or not FILEBROWSER_DB.is_file():
         return
     _run([str(binary), "users", "rm", username, "-d", str(FILEBROWSER_DB)])
+
+
+def filebrowser_pid_path() -> Path:
+    return VAR / "filebrowser.pid"
+
+
+def filebrowser_process_running() -> bool:
+    pid_path = filebrowser_pid_path()
+    if not pid_path.is_file():
+        return False
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def stop_filebrowser_process() -> None:
+    pid_path = filebrowser_pid_path()
+    if not pid_path.is_file():
+        return
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        try:
+            pid_path.unlink()
+        except OSError:
+            pass
+        return
+    try:
+        os.kill(pid, 15)
+    except OSError:
+        pass
+    try:
+        pid_path.unlink()
+    except OSError:
+        pass
+
+
+def start_filebrowser_process(*, config: Path | None = None) -> None:
+    """Start Filebrowser as a background process (snap / no host unit)."""
+    from meshdrive.runtime_paths import ensure_filebrowser_db, rewrite_runtime_config_paths
+
+    if filebrowser_process_running():
+        return
+    rewrite_runtime_config_paths()
+    ensure_filebrowser_db()
+    binary = which_filebrowser()
+    if not binary:
+        raise RuntimeError("filebrowser binary not found")
+    cfg = config or FILEBROWSER_JSON
+    if not cfg.is_file():
+        raise RuntimeError(f"filebrowser config missing: {cfg}")
+    log = VAR / "log" / "filebrowser.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    # cwd under ROOT so any relative fallbacks stay writable (never $SNAP).
+    with log.open("a", encoding="utf-8") as fh:
+        proc = subprocess.Popen(
+            [str(binary), "-c", str(cfg)],
+            stdout=fh,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            cwd=str(VAR),
+            env={
+                **os.environ,
+                # Prevent tools from defaulting into $SNAP or $SNAP_DATA.
+                "HOME": str(VAR),
+                "XDG_CONFIG_HOME": str(VAR / "xdg-config"),
+                "XDG_DATA_HOME": str(VAR / "xdg-data"),
+            },
+        )
+    filebrowser_pid_path().write_text(f"{proc.pid}\n", encoding="utf-8")

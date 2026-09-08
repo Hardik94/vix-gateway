@@ -50,6 +50,21 @@
   </keywords>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="2.2.2" date="2026-09-07">
+      <description>
+        <p>Snap agent auto-start hooks; in-process mount/Filebrowser under snap.</p>
+      </description>
+    </release>
+    <release version="2.2.1" date="2026-09-06">
+      <description>
+        <p>Snap doctor and binary path fixes; JuiceFS/Filebrowser under $SNAP.</p>
+      </description>
+    </release>
+    <release version="2.2.0" date="2026-09-06">
+      <description>
+        <p>User↔bucket ACL, Filebrowser portals, TUI assign users and buckets.</p>
+      </description>
+    </release>
     <release version="2.1.0" date="2026-09-04">
       <description>
         <p>MCP JuiceFS buckets, hybrid free→paid identity tooling, HTTPS license scaffolding, private/shared homes.</p>

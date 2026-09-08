@@ -34,17 +34,23 @@ curl -sS http://127.0.0.1:12700/state | jq .storage
 
 Add flow runs `juicefs format` with sqlite metadata and local `file://` storage, then upserts `config.yaml`. If OpenFGA is installed, grants MCP reader tuple on the new backend.
 
-Delete flow unmounts the backend, disables `meshdrive-mount@<name>.service`, removes the config entry, and clears the name from user `storage_access`. With `wipe_data=1`, local metadata DB, object directory, cache, and mount folder are removed (local `juicefs` backends only).
+Delete flow unmounts the backend, disables `meshdrive-mount@<name>.service`, removes the config entry, and clears the name from user `storage_access` (portals rebuilt). With `wipe_data=1`, local metadata DB, object directory, cache, and mount folder are removed (local `juicefs` backends only).
+
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| `GET` | `/storage/{name}/users` | — | Users assigned to this bucket |
+| `POST` | `/storage/{name}/users` | `{"users":["alice","bob"]}` | Replace membership for this bucket |
 
 ### Users
 
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
-| `GET` | `/users` | — | List local users |
-| `POST` | `/users` | `{"username":"u","password":"p","admin":false}` | Create user (+ Filebrowser) |
-| `DELETE` | `/users/{username}` | — | Delete user |
+| `GET` | `/users` | — | List local users (includes `storage_access`) |
+| `POST` | `/users` | `{"username":"u","password":"p","admin":false,"storage_access":["primary"]}` | Create user (+ Filebrowser portal scope) |
+| `POST` | `/users/{username}/storage_access` | `{"storage_access":["primary","photos"]}` | Replace user's bucket ACL + rebuild portal |
+| `DELETE` | `/users/{username}` | — | Delete user (+ portal) |
 
-User administration is intentionally **absent from MCP**.
+User administration is intentionally **absent from MCP**. See [storage-acl.md](storage-acl.md).
 
 ### Filebrowser
 

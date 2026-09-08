@@ -44,9 +44,9 @@ Prints version, license tier, install root, storage backends, and agent reachabi
 
 Diagnostics for a broken install:
 
-- CLI binaries on `PATH`
-- JuiceFS / Filebrowser / VIX binaries
-- Python venv
+- CLI binaries on `PATH` (or snap apps / `$SNAP/bin` wrappers)
+- JuiceFS / Filebrowser / VIX binaries (`$SNAP/opt/meshdrive/bin` under snap)
+- Python env (venv for deb/source; `python-packages` for snap)
 - `config.yaml` presence
 - License tier
 - `meshdrive-agent.service` state
