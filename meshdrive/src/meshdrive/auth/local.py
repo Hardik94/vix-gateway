@@ -110,6 +110,101 @@ def remove_storage_access(backend_name: str, path: Path | None = None) -> None:
         save_auth(data, path)
 
 
+def set_storage_access(
+    username: str,
+    storage_access: list[str],
+    path: Path | None = None,
+) -> dict[str, Any]:
+    """Replace a user's bucket ACL (many-to-many user ↔ storage backend)."""
+    username = username.strip()
+    data = load_auth(path)
+    if username not in data["users"]:
+        raise KeyError(username)
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in storage_access:
+        name = str(item).strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        cleaned.append(name)
+    rec = data["users"][username]
+    if not isinstance(rec, dict):
+        raise KeyError(username)
+    rec["storage_access"] = cleaned
+    save_auth(data, path)
+    out = dict(rec)
+    out.pop("password_hash", None)
+    out["username"] = username
+    return out
+
+
+def grant_storage_access(
+    username: str,
+    backend_name: str,
+    path: Path | None = None,
+) -> dict[str, Any]:
+    data = load_auth(path)
+    rec = (data.get("users") or {}).get(username)
+    if not isinstance(rec, dict):
+        raise KeyError(username)
+    access = list(rec.get("storage_access") or [])
+    if backend_name not in access:
+        access.append(backend_name)
+    return set_storage_access(username, access, path=path)
+
+
+def revoke_user_storage_access(
+    username: str,
+    backend_name: str,
+    path: Path | None = None,
+) -> dict[str, Any]:
+    data = load_auth(path)
+    rec = (data.get("users") or {}).get(username)
+    if not isinstance(rec, dict):
+        raise KeyError(username)
+    access = [b for b in (rec.get("storage_access") or []) if b != backend_name]
+    return set_storage_access(username, access, path=path)
+
+
+def set_backend_users(
+    backend_name: str,
+    usernames: list[str],
+    path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Set which users may access ``backend_name`` (rewrites each user's ACL)."""
+    backend_name = backend_name.strip()
+    if not backend_name:
+        raise ValueError("backend name required")
+    wanted = {u.strip() for u in usernames if str(u).strip()}
+    data = load_auth(path)
+    users = data.get("users") or {}
+    updated: list[dict[str, Any]] = []
+    for name, rec in users.items():
+        if not isinstance(rec, dict):
+            continue
+        access = list(rec.get("storage_access") or [])
+        has = backend_name in access
+        if name in wanted and not has:
+            access.append(backend_name)
+            rec["storage_access"] = access
+            updated.append(name)
+        elif name not in wanted and has:
+            rec["storage_access"] = [b for b in access if b != backend_name]
+            updated.append(name)
+    if updated:
+        save_auth(data, path)
+    return list_users(path)
+
+
+def users_for_backend(backend_name: str, path: Path | None = None) -> list[str]:
+    names: list[str] = []
+    for user in list_users(path):
+        if backend_name in (user.get("storage_access") or []):
+            names.append(str(user["username"]))
+    return names
+
+
 def verify_password(username: str, password: str, path: Path | None = None) -> bool:
     rec = (load_auth(path).get("users") or {}).get(username)
     if not rec or "password_hash" not in rec:

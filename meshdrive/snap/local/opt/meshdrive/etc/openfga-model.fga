@@ -1,0 +1,22 @@
+model
+  schema 1.1
+
+type user
+
+type agent
+  relations
+    define owner: [user]
+    define operator: [user]
+
+type storage_backend
+  relations
+    define owner: [user]
+    define reader: [user, agent] or owner
+    define writer: [user, agent] or owner
+
+type file
+  relations
+    define parent: [storage_backend]
+    define owner: [user]
+    define reader: [user, agent] or owner or reader from parent
+    define writer: [user, agent] or owner or writer from parent

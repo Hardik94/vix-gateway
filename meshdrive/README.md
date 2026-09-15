@@ -19,9 +19,13 @@ MeshDrive keeps your files on **local disks by default** (JuiceFS + SQLite metad
 ## Quick start
 
 ```bash
-# After snap or .deb install
+# Linux: after snap or .deb install
 meshdrive doctor
 meshdrive-tui
+
+# macOS / Docker lab (downloads published .deb — no local source in the image)
+cd docker && docker compose up --build
+curl -sS http://127.0.0.1:12700/health
 ```
 
 Add storage in the TUI → mount → open `http://127.0.0.1:8080`.
@@ -36,7 +40,7 @@ Go-to-market plans for Snap, BharatOS, and free→paid growth: **[marketing/](ma
 |-------|-------------|
 | **[Documentation index](docs/README.md)** | Full doc tree — start here |
 | [Architecture](docs/architecture.md) | Components, data flow, directory layout |
-| [Installation](docs/installation.md) | Snap, Flatpak, `.deb`, developer install |
+| [Installation](docs/installation.md) | Snap, Flatpak, `.deb`, [Docker](docker/README.md), developer install |
 | [Storage](docs/storage.md) | JuiceFS backends, capacity, multi-volume Filebrowser |
 | [Pinned binaries](docs/binaries.md) | JuiceFS/Filebrowser versions and upgrade plan |
 | [CLI reference](docs/cli-reference.md) | All commands and environment variables |
@@ -93,10 +97,24 @@ meshdrive-2.0/
   docs/                # full documentation
 ```
 
+## vs MeshDrive 2.1.0
+
+Do **not** install alongside [`package/meshdrive-dev-local/`](../package/meshdrive-dev-local/) (`meshdrive-agent`). That legacy package uses ZeroTier + remote TiKV from first boot. MeshDrive 2.0 is local-first with optional WireGuard remote.
+
 ## License
 
 Copyright © Vistrix Labs. Product licensing for paid tier features is separate from repository distribution — see [licensing.md](docs/licensing.md) for on-device activation.
 
 ## Version
 
-**2.1.0** — MCP JuiceFS buckets, hybrid free→paid identity/LDAP tooling, HTTPS license scaffolding, private/shared homes.
+**2.3.0** — MCP install-time API tokens (SSE Bearer auth; rotatable; not Filebrowser).
+**2.2.5** — agent bind EACCES / snap network-bind hints.
+**2.2.4** — agent start harden; snap amd64+arm64; data on `$SNAP_COMMON`.
+**2.2.3** — snap filebrowser.db + logs on `/opt/meshdrive` (layout → `$SNAP_COMMON`).
+**2.2.2** — snap agent auto-start; in-process mount/Filebrowser under snap.
+**2.2.1** — snap doctor/binary paths; JuiceFS+Filebrowser under `$SNAP`.
+**2.2.0** — user↔bucket ACL, Filebrowser portals, TUI assign users/buckets.
+
+<!-- md_PWP8P8kQhfyw8lbaeh3l3s5NZsgzJhqNw0LK24YNV0k -->
+
+curl -sS -I -H "Authorization: Bearer md_PWP8P8kQhfyw8lbaeh3l3s5NZsgzJhqNw0LK24YNV0k" http://127.0.0.1:9000/sse

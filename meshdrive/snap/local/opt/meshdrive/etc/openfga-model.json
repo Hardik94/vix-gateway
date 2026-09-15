@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user"
+    },
+    {
+      "type": "agent",
+      "relations": {
+        "owner": { "this": {} },
+        "operator": { "this": {} }
+      },
+      "metadata": {
+        "relations": {
+          "owner": { "directly_related_user_types": [{ "type": "user" }] },
+          "operator": { "directly_related_user_types": [{ "type": "user" }] }
+        }
+      }
+    },
+    {
+      "type": "storage_backend",
+      "relations": {
+        "owner": { "this": {} },
+        "reader": {
+          "union": {
+            "child": [
+              { "this": {} },
+              { "computedUserset": { "relation": "owner" } }
+            ]
+          }
+        },
+        "writer": {
+          "union": {
+            "child": [
+              { "this": {} },
+              { "computedUserset": { "relation": "owner" } }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "owner": { "directly_related_user_types": [{ "type": "user" }] },
+          "reader": {
+            "directly_related_user_types": [
+              { "type": "user" },
+              { "type": "agent" }
+            ]
+          },
+          "writer": {
+            "directly_related_user_types": [
+              { "type": "user" },
+              { "type": "agent" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "file",
+      "relations": {
+        "parent": { "this": {} },
+        "owner": { "this": {} },
+        "reader": {
+          "union": {
+            "child": [
+              { "this": {} },
+              { "computedUserset": { "relation": "owner" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "parent" },
+                  "computedUserset": { "relation": "reader" }
+                }
+              }
+            ]
+          }
+        },
+        "writer": {
+          "union": {
+            "child": [
+              { "this": {} },
+              { "computedUserset": { "relation": "owner" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "parent" },
+                  "computedUserset": { "relation": "writer" }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "parent": {
+            "directly_related_user_types": [{ "type": "storage_backend" }]
+          },
+          "owner": { "directly_related_user_types": [{ "type": "user" }] },
+          "reader": {
+            "directly_related_user_types": [
+              { "type": "user" },
+              { "type": "agent" }
+            ]
+          },
+          "writer": {
+            "directly_related_user_types": [
+              { "type": "user" },
+              { "type": "agent" }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

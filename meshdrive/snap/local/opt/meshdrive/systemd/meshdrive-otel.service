@@ -1,0 +1,25 @@
+[Unit]
+Description=MeshDrive OpenTelemetry collector (local files only)
+After=meshdrive-agent.service
+Wants=meshdrive-agent.service
+
+[Service]
+Type=simple
+User=meshdrive
+Group=meshdrive
+Environment=MESHDRIVE_ROOT=/opt/meshdrive
+ExecStart=/opt/meshdrive/bin/otelcol-contrib --config /opt/meshdrive/etc/otel-collector.yaml
+Restart=on-failure
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/meshdrive/var/telemetry /opt/meshdrive/var/log
+ReadOnlyPaths=/opt/meshdrive/etc /opt/meshdrive/bin
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 ::1/128
+
+[Install]
+WantedBy=multi-user.target

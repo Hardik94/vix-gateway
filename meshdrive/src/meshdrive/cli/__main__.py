@@ -122,6 +122,89 @@ def _cmd_wireguard(args: argparse.Namespace) -> int:
         return 1
 
 
+def _cmd_agent(args: argparse.Namespace) -> int:
+    import shutil
+    import subprocess
+
+    from meshdrive.agent import client as agent_client
+    from meshdrive.agent import systemd as agent_systemd
+    from meshdrive.constants import CONTROL_HOST, CONTROL_PORT
+
+    cmd = args.agent_cmd
+    if cmd == "status":
+        unit = agent_systemd.agent_unit()
+        if shutil.which("systemctl"):
+            proc = subprocess.run(
+                ["systemctl", "is-active", unit],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            print(f"unit: {unit} = {proc.stdout.strip() or proc.stderr.strip() or 'unknown'}")
+        try:
+            health = agent_client.health()
+            print(f"http: http://{CONTROL_HOST}:{CONTROL_PORT}/health ok")
+            print(json.dumps(health, indent=2)[:500])
+            return 0
+        except Exception as exc:
+            print(f"http: unavailable ({exc})")
+            print(f"hint: {agent_systemd.agent_start_hint()}")
+            return 1
+
+    if cmd in {"start", "stop", "restart"}:
+        if agent_systemd.snap_installed():
+            snap_cmd = {"start": "start", "stop": "stop", "restart": "restart"}[cmd]
+            proc = subprocess.run(
+                ["snap", snap_cmd, "meshdrive.agent"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if proc.returncode != 0:
+                unit = agent_systemd.snap_agent_unit()
+                proc2 = subprocess.run(
+                    ["systemctl", snap_cmd, unit],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if proc2.returncode != 0:
+                    print(
+                        (proc.stderr or proc.stdout or proc2.stderr or proc2.stdout or "failed").strip(),
+                        file=sys.stderr,
+                    )
+                    print(
+                        "Snap has no meshdrive-agent.service — use:\n"
+                        "  sudo snap start meshdrive.agent\n"
+                        f"  sudo systemctl start {unit}",
+                        file=sys.stderr,
+                    )
+                    return 1
+            print(f"agent {cmd}ed (snap → {agent_systemd.snap_agent_unit()})")
+            return 0
+        unit = "meshdrive-agent.service"
+        proc = subprocess.run(
+            ["systemctl", cmd, unit],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "failed").strip()
+            print(err, file=sys.stderr)
+            if "not found" in err.lower() or "not loaded" in err.lower():
+                print(
+                    "Note: snap installs use snap.meshdrive.agent.service, not meshdrive-agent.service.\n"
+                    "  sudo snap start meshdrive.agent",
+                    file=sys.stderr,
+                )
+            return 1
+        print(f"agent {cmd}ed ({unit})")
+        return 0
+    return 1
+
+
 def _cmd_cluster(args: argparse.Namespace) -> int:
     from meshdrive.cluster import configure as cluster
 
@@ -138,6 +221,52 @@ def _cmd_cluster(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    from meshdrive.mcp import credentials as mcp_creds
+
+    if args.mcp_cmd != "credentials":
+        return 1
+    sub = args.mcp_credentials_cmd
+    if sub == "status":
+        print(json.dumps(mcp_creds.status(), indent=2))
+        return 0
+    if sub == "show":
+        token = mcp_creds.read_once_plaintext(consume=bool(args.consume))
+        if not token:
+            print(
+                "No one-time plaintext available. "
+                "Tokens are only shown at create/rotate. Run:\n"
+                "  meshdrive mcp credentials rotate",
+                file=sys.stderr,
+            )
+            return 1
+        print(token)
+        if args.consume:
+            print("(once-file consumed)", file=sys.stderr)
+        return 0
+    if sub == "rotate":
+        plaintext = mcp_creds.rotate_token()
+        print("MCP API token rotated. Store this secret now — it will not be shown again:")
+        print(plaintext)
+        print(
+            f"\nAlso written to once-file (0600). Consume with:\n"
+            f"  meshdrive mcp credentials show --consume",
+            file=sys.stderr,
+        )
+        return 0
+    if sub == "ensure":
+        created = mcp_creds.ensure_install_token()
+        if created:
+            print("Created new MCP API token:")
+            print(created)
+            print("\nRetrieve later (once): meshdrive mcp credentials show --consume", file=sys.stderr)
+        else:
+            print(json.dumps(mcp_creds.status(), indent=2))
+            print("Token already configured. Rotate to get a new plaintext secret.", file=sys.stderr)
+        return 0
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="meshdrive", description="MeshDrive 2.0 local-first storage")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -145,6 +274,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="Show storage and agent status").set_defaults(func=_cmd_status)
     sub.add_parser("tui", help="Launch terminal UI").set_defaults(func=_cmd_tui)
+
+    p_agent = sub.add_parser("agent", help="Start/stop/status the local agent daemon")
+    agent_sub = p_agent.add_subparsers(dest="agent_cmd", required=True)
+    for name in ("status", "start", "stop", "restart"):
+        agent_sub.add_parser(name).set_defaults(func=_cmd_agent)
 
     p_doc = sub.add_parser("doctor", help="Diagnose install, PATH, and components")
     p_doc.add_argument("-v", "--verbose", action="store_true")
@@ -192,6 +326,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg.add_argument("--backend-name", default="remote")
     p_cfg.set_defaults(func=_cmd_cluster)
     cl_sub.add_parser("status", help="Show cluster configuration").set_defaults(func=_cmd_cluster)
+
+    p_mcp = sub.add_parser("mcp", help="MCP server credentials (not Filebrowser users)")
+    mcp_sub = p_mcp.add_subparsers(dest="mcp_cmd", required=True)
+    p_cred = mcp_sub.add_parser("credentials", help="Install-time API token status / rotate / show")
+    cred_sub = p_cred.add_subparsers(dest="mcp_credentials_cmd", required=True)
+    cred_sub.add_parser("status", help="Show token metadata (no secrets)").set_defaults(func=_cmd_mcp)
+    p_show = cred_sub.add_parser("show", help="Print one-time plaintext if still on disk")
+    p_show.add_argument(
+        "--consume",
+        action="store_true",
+        help="Delete the once-file after printing",
+    )
+    p_show.set_defaults(func=_cmd_mcp)
+    cred_sub.add_parser("rotate", help="Invalidate current token and issue a new one").set_defaults(
+        func=_cmd_mcp
+    )
+    cred_sub.add_parser("ensure", help="Create install token if missing").set_defaults(func=_cmd_mcp)
 
     return parser
 

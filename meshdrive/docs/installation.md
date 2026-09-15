@@ -1,17 +1,32 @@
 # Installation
 
-MeshDrive 2.0 supports four install paths. **Snap is recommended for end users**; Flatpak suits desktop Linux distros; `.deb` and `install.sh` suit developers and enterprise deployments.
+MeshDrive 2.0 supports five install paths. **Snap is recommended for end users** on Linux; **Docker** is recommended on macOS labs (pulls the published `.deb`); Flatpak suits desktop Linux; `.deb` and `install.sh` suit developers and enterprise hosts.
 
 ## Requirements
 
-- **OS:** Debian or Ubuntu (amd64) for Snap/`.deb`; any Flatpak-capable Linux for Flatpak
-- **Init:** systemd (Snap/`.deb`); Flatpak runs the agent via `flatpak run`
-- **Kernel:** FUSE (`fuse3` or `fuse`)
+- **OS:** Debian or Ubuntu (amd64 or arm64) for Snap/`.deb`; any Flatpak-capable Linux for Flatpak; **Docker** (linux/amd64 image) for Mac/Windows labs
+- **Init:** systemd (Snap/`.deb`); Flatpak runs the agent via `flatpak run`; Docker runs `meshdrive-agent` in the foreground
+- **Kernel:** FUSE (`fuse3` or `fuse`) — Docker Compose enables `/dev/fuse` + privileged
 - **Python:** 3.10+ (venv created automatically on install; bundled in Flatpak)
 - **Tools:** `curl`, `ca-certificates`, `tar` (host tools for Snap/`.deb` builds)
 - **Disk:** ~1 GB for binaries, venv, and cache (data disks are separate)
 
 First install needs outbound HTTPS for PyPI and GitHub releases (JuiceFS **v1.4.1**, Filebrowser **v2.63.23**). After that, **free tier** operation does not require the internet.
+
+---
+
+## Option 0 — Docker (macOS / any Docker host, no source tree)
+
+Installs [Meshdrive v2.3.1 `.deb`](https://github.com/Hardik94/vix-gateway/releases/tag/v2.3.1) inside Ubuntu 24.04. The image does **not** include your git checkout.
+
+```bash
+cd meshdrive-2.0/docker
+docker compose up --build
+curl -sS http://127.0.0.1:12700/health
+docker exec -it meshdrive meshdrive-tui
+```
+
+Full notes: [docker/README.md](../docker/README.md).
 
 ---
 
@@ -22,28 +37,68 @@ Classic confinement is used so FUSE, WireGuard, and nftables work without strict
 ### Build
 
 ```bash
-cd meshdrive-2.0/snap
+cd meshdrive   # package root (parent of snap/), not only snap/
 # Ensure LXD + group: sudo usermod -aG lxd "$USER" && newgrp lxd
-snapcraft pack --use-lxd
-# or on a dedicated build VM:
-snapcraft pack --destructive-mode
+
+# LXD only packs what is on disk / not craft-ignored. Commit src, packaging,
+# overlay (or rely on snap/local fallback), pyproject.toml:
+#   git add src packaging overlay snap pyproject.toml README.md
+#   git status   # confirm overlay or snap/local is present
+
+snapcraft clean --use-lxd
+# Same yaml supports both arches; build on matching host (or use remote-build):
+snapcraft pack --use-lxd --build-for=amd64
+# snapcraft pack --use-lxd --build-for=arm64
+# snapcraft remote-build   # Launchpad can build amd64 + arm64 from this recipe
+# or:
+snapcraft pack --destructive-mode --build-for=amd64
 ```
+
+`override-build` reads `$CRAFT_PART_SRC` and falls back to `snap/local/opt/meshdrive` for configs if `overlay/` was omitted from the LXD pack.
 
 ### Install
 
+Host FUSE is required (the snap does **not** ship a working `fusermount3`):
+
 ```bash
-sudo snap install --dangerous meshdrive_2.1.0_amd64.snap
-snap run meshdrive.doctor
-snap run meshdrive.tui
+sudo apt-get install -y fuse3
+sudo modprobe fuse
+grep -E '^user_allow_other' /etc/fuse.conf || echo user_allow_other | sudo tee -a /etc/fuse.conf
 ```
 
-After install, wrappers must call `$SNAP/opt/meshdrive/venv/...` — never a builder path like `/home/.../parts/meshdrive/install/...`. If you see that error, rebuild with current `snap/snapcraft.yaml` (2.1.0+).
+```bash
+# Local/unsigned builds need --dangerous; this snap is classic confinement.
+# Store "beta" channel still needs classic confinement approval from Snap Store.
+sudo snap install --dangerous --classic ./meshdrive_2.3.5_amd64.snap
+sudo snap start meshdrive.agent
+snap run meshdrive.doctor
+snap run meshdrive.tui
+curl -sS http://127.0.0.1:12700/health
+```
+
+After install, wrappers must use `$SNAP/usr/bin/python3 -m meshdrive.cli` with
+`PYTHONPATH=$SNAP/opt/meshdrive/python-packages` (relocatable; no build-time venv).
+JuiceFS / Filebrowser ship under `$SNAP/opt/meshdrive/bin` (not `$SNAP_COMMON/bin`).
+Doctor accepts snap apps (`meshdrive.tui`, `$SNAP/bin/*-wrapper`).
+
+Quick check:
+
+```bash
+head -20 /snap/meshdrive/current/bin/meshdrive-wrapper
+ls /snap/meshdrive/current/opt/meshdrive/python-packages/meshdrive
+ls /snap/meshdrive/current/opt/meshdrive/bin/{juicefs,filebrowser}
+snap run meshdrive --help
+```
 
 ### Data location
 
-All state lives under **`/var/snap/meshdrive/common/`**, mirroring the `/opt/meshdrive` layout (`etc/`, `var/`, `bin/`, `mnt/`).
+All state lives under **`/var/snap/meshdrive/common/`** (`$SNAP_COMMON` — preferred data root).
+Shipped binaries and Python code live under **`/snap/meshdrive/current/opt/meshdrive/`**.
 
-Snap sets `MESHDRIVE_ROOT=$SNAP_COMMON` in app wrappers.
+Wrappers set `MESHDRIVE_ROOT=$SNAP_COMMON`. Filebrowser DB and logs:
+
+- DB: `/var/snap/meshdrive/common/var/filebrowser.db`
+- Logs: `/var/snap/meshdrive/common/var/log/`
 
 ### Snap apps
 
@@ -52,7 +107,22 @@ Snap sets `MESHDRIVE_ROOT=$SNAP_COMMON` in app wrappers.
 | CLI | `snap run meshdrive` |
 | Doctor | `snap run meshdrive.doctor` |
 | TUI | `snap run meshdrive.tui` |
-| Agent | `snap run meshdrive.agent` (daemon) |
+| Agent | `snap run meshdrive.agent` (daemon — auto-start via install hook) |
+| Addons | `snap run meshdrive.addons` |
+| MCP | `snap run meshdrive.mcp` |
+
+If the TUI says **Agent offline** (snap has **no** `meshdrive-agent.service`):
+
+```bash
+sudo snap start meshdrive.agent
+# equivalent systemd unit name:
+sudo systemctl start snap.meshdrive.agent.service
+sudo systemctl status snap.meshdrive.agent.service --no-pager
+
+snap run meshdrive.doctor
+curl -sS http://127.0.0.1:12700/health
+journalctl -u snap.meshdrive.agent.service -b --no-pager | tail -50
+```
 
 ---
 

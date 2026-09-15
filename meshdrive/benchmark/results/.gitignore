@@ -1,0 +1,10 @@
+# Live / dated benchmark outputs (gitignored)
+
+Keep `TEMPLATE.md` and `baseline-fixture.json` in git.
+Ignore machine-specific runs:
+
+*
+!.gitignore
+!TEMPLATE.md
+!baseline-fixture.json
+!.gitkeep

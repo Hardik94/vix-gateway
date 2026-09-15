@@ -13,12 +13,39 @@ The MeshDrive MCP (Model Context Protocol) server exposes **storage tools** to A
 | Property | Value |
 |----------|-------|
 | Install | `meshdrive addons install mcp` |
-| Transport | `stdio` (default) or `sse` on `127.0.0.1:9000` |
-| Command | `$ROOT/bin/meshdrive-mcp` |
-| Systemd | `meshdrive-mcp.service` |
-| Path scope | `isolation.allowed_paths` (default: install root only) |
+| **stdio** | Default for Cursor/Claude — `snap run meshdrive.mcp` or `$ROOT/bin/meshdrive-mcp` (no port) |
+| **SSE** | `http://127.0.0.1:9000/sse` — Bearer token required; started by install (systemd on `.deb`, background process on **snap**) |
+| Systemd | `meshdrive-mcp.service` (non-snap) |
+| Path scope | JuiceFS bucket mounts only (see `paths.py`) |
+| Credentials | Install-time API token (not a Filebrowser/LDAP user) |
 
-Implementation: `src/meshdrive/mcp/server.py`
+**Snap note:** Install marks MCP ready for **stdio** and starts SSE on **127.0.0.1:9000**. Check with:
+
+```bash
+ss -ltn | grep 9000
+curl -sS http://127.0.0.1:9000/ready
+# log: /var/snap/meshdrive/common/var/log/mcp-sse.log
+```
+
+Implementation: `src/meshdrive/mcp/server.py`, `src/meshdrive/mcp/credentials.py`
+
+## MCP API token (security)
+
+On `meshdrive addons install mcp`, MeshDrive creates a high-entropy **API token** (`md_…`):
+
+- Stored as **argon2id hash** in `$ROOT/etc/mcp_credentials.yaml` (mode `0600`)
+- Plaintext written once to `$ROOT/var/mcp-token-once.txt` (mode `0600`)
+- **Not** a Filebrowser user and **not** created by end users in the TUI
+- **stdio** trusts the local process (no HTTP header)
+- **SSE/HTTP** requires `Authorization: Bearer <token>` (or `X-MeshDrive-Token`)
+
+```bash
+meshdrive mcp credentials status
+meshdrive mcp credentials show --consume   # print + delete once-file
+meshdrive mcp credentials rotate           # invalidate old token, print new secret
+```
+
+OpenFGA (when installed) continues to use subject `agent:mcp` for the default token.
 
 ## Minimal stdio config (Cursor / Claude Code)
 
@@ -73,9 +100,24 @@ Denied:   /home/user/secret.txt
 
 See `src/meshdrive/paths.py` and `isolation.allowed_paths` in config.
 
+Automated ASR / FPR measurement: [benchmark/](../benchmark/README.md)
+(`run_isolation_bench.py --fixture` → goal **0%** attack success rate).
+
 ## OpenFGA
 
 Optional: `meshdrive addons install openfga` — MCP principal `agent:mcp` checked for reader/writer on files and backends.
+
+## SSE with token
+
+```bash
+export MESHDRIVE_MCP_TRANSPORT=sse
+export MESHDRIVE_MCP_HOST=127.0.0.1
+export MESHDRIVE_MCP_PORT=9000
+# optional: meshdrive-mcp can also read MESHDRIVE_MCP_TOKEN for local proxies
+TOKEN=$(meshdrive mcp credentials show --consume)
+curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9000/ready
+curl -sS -H "Authorization: Bearer $TOKEN" -N http://127.0.0.1:9000/sse
+```
 
 ## Running manually
 

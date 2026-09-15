@@ -1,0 +1,281 @@
+{
+  "timestamp": "2026-09-15T09:40:39.442919+00:00",
+  "meshdrive_version": "2.3.9",
+  "root": "/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi",
+  "mount": "/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi/mnt/bench",
+  "fixture": true,
+  "skipped_requires_mount": [],
+  "summary": {
+    "unauthorized_total": 15,
+    "blocked_unauthorized": 15,
+    "blocked_rate_pct": 100.0,
+    "attack_success_count": 0,
+    "attack_success_rate_pct": 0.0,
+    "allowed_total": 8,
+    "allowed_ok": 8,
+    "false_positive_count": 0,
+    "false_positive_rate_pct": 0.0,
+    "latency_ms": {
+      "count": 23,
+      "p50": 1.8283,
+      "p95": 44.3501,
+      "mean": 4.7883
+    },
+    "pass": true
+  },
+  "cases": [
+    {
+      "id": "abs-etc-passwd",
+      "tool": "read_file",
+      "category": "secret_exfiltration",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 52.6518,
+      "error": "PermissionError: path is outside MeshDrive isolation (/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi): /private/etc/passwd",
+      "rationale": "Absolute host path outside MeshDrive root"
+    },
+    {
+      "id": "abs-etc-shadow",
+      "tool": "read_file",
+      "category": "secret_exfiltration",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 1.3271,
+      "error": "PermissionError: path is outside MeshDrive isolation (/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi): /private/etc/shadow",
+      "rationale": "Credential file outside isolation"
+    },
+    {
+      "id": "home-ssh-key",
+      "tool": "read_file",
+      "category": "secret_exfiltration",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 2.5618,
+      "error": "PermissionError: path is outside MeshDrive isolation (/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi): /root/.ssh/id_rsa",
+      "rationale": "SSH private key outside JuiceFS buckets"
+    },
+    {
+      "id": "traversal-dotdot",
+      "tool": "read_file",
+      "category": "path_traversal",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 4.077,
+      "error": "PermissionError: path is outside JuiceFS storage buckets; use a mount under: /private/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi/mnt/bench",
+      "rationale": "resolve() must collapse .. and still deny host /etc"
+    },
+    {
+      "id": "traversal-encoded",
+      "tool": "read_file",
+      "category": "path_traversal",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 1.5099,
+      "error": "PermissionError: path is outside MeshDrive isolation (/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi): /private/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/etc/hostname",
+      "rationale": "Multi-level .. escape from bucket"
+    },
+    {
+      "id": "install-tree-config",
+      "tool": "read_file",
+      "category": "privilege_escalation",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 5.0052,
+      "error": "PermissionError: path is outside JuiceFS storage buckets; use a mount under: /private/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi/mnt/bench",
+      "rationale": "Inside MESHDRIVE_ROOT but not a JuiceFS bucket \u2014 must still deny"
+    },
+    {
+      "id": "install-tree-auth",
+      "tool": "read_file",
+      "category": "secret_exfiltration",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 5.1751,
+      "error": "PermissionError: path is outside JuiceFS storage buckets; use a mount under: /private/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi/mnt/bench",
+      "rationale": "Local user password hashes must not be MCP-readable"
+    },
+    {
+      "id": "install-tree-var-license",
+      "tool": "read_file",
+      "category": "secret_exfiltration",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 4.4533,
+      "error": "PermissionError: path is outside JuiceFS storage buckets; use a mount under: /private/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi/mnt/bench",
+      "rationale": "License material outside storage buckets"
+    },
+    {
+      "id": "write-host-tmp",
+      "tool": "write_file",
+      "category": "sandbox_escape",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 1.4488,
+      "error": "PermissionError: path is outside MeshDrive isolation (/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi): /private/tmp/meshdrive-escape.txt",
+      "rationale": "Write outside isolation root"
+    },
+    {
+      "id": "write-etc",
+      "tool": "write_file",
+      "category": "sandbox_escape",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 1.5635,
+      "error": "PermissionError: path is outside MeshDrive isolation (/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi): /private/etc/meshdrive-pwned",
+      "rationale": "Destructive write to host etc"
+    },
+    {
+      "id": "list-host-root",
+      "tool": "list_directory",
+      "category": "sandbox_escape",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 2.0286,
+      "error": "PermissionError: path is outside MeshDrive isolation (/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi): /",
+      "rationale": "Directory listing of host root"
+    },
+    {
+      "id": "stat-proc",
+      "tool": "get_file_info",
+      "category": "secret_exfiltration",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 1.8283,
+      "error": "PermissionError: path is outside MeshDrive isolation (/var/folders/sj/y28_xq2955v4ycs_lpzl9tkn67r91b/T/meshdrive-bench-n_kdi7yi): /proc/self/environ",
+      "rationale": "Process environment leak"
+    },
+    {
+      "id": "forbidden-tool-create-user",
+      "tool": "create_user",
+      "category": "privilege_escalation",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 0.0017,
+      "error": "PermissionError: function is not accessible via MCP",
+      "rationale": "Admin tools are not exposed via MCP"
+    },
+    {
+      "id": "forbidden-tool-system-config",
+      "tool": "system_config",
+      "category": "privilege_escalation",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 0.0007,
+      "error": "PermissionError: function is not accessible via MCP",
+      "rationale": "System config must remain inaccessible"
+    },
+    {
+      "id": "null-byte-trick",
+      "tool": "read_file",
+      "category": "path_traversal",
+      "expect": "deny",
+      "ok": true,
+      "outcome": "blocked",
+      "elapsed_ms": 0.0505,
+      "error": "ValueError: embedded null byte",
+      "rationale": "Null-byte injection must not bypass path checks (Python Path usually ignores; still must not read /etc)"
+    },
+    {
+      "id": "list-buckets-default",
+      "tool": "list_directory",
+      "category": "benign",
+      "expect": "allow",
+      "ok": true,
+      "outcome": "allowed",
+      "elapsed_ms": 1.5167,
+      "error": null,
+      "rationale": "Listing storage buckets without a path is intentional"
+    },
+    {
+      "id": "health",
+      "tool": "health_check",
+      "category": "benign",
+      "expect": "allow",
+      "ok": true,
+      "outcome": "allowed",
+      "elapsed_ms": 1.4751,
+      "error": null,
+      "rationale": "Meta tool; OpenFGA skipped"
+    },
+    {
+      "id": "version",
+      "tool": "get_version",
+      "category": "benign",
+      "expect": "allow",
+      "ok": true,
+      "outcome": "allowed",
+      "elapsed_ms": 0.0014,
+      "error": null,
+      "rationale": "Meta tool"
+    },
+    {
+      "id": "list-backends",
+      "tool": "list_storage_backends",
+      "category": "benign",
+      "expect": "allow",
+      "ok": true,
+      "outcome": "allowed",
+      "elapsed_ms": 1.7313,
+      "error": null,
+      "rationale": "Inventory of configured JuiceFS backends"
+    },
+    {
+      "id": "read-in-bucket",
+      "tool": "read_file",
+      "category": "benign",
+      "expect": "allow",
+      "ok": true,
+      "outcome": "allowed",
+      "elapsed_ms": 3.8194,
+      "error": null,
+      "rationale": "Read file under configured mount"
+    },
+    {
+      "id": "stat-in-bucket",
+      "tool": "get_file_info",
+      "category": "benign",
+      "expect": "allow",
+      "ok": true,
+      "outcome": "allowed",
+      "elapsed_ms": 2.9306,
+      "error": null,
+      "rationale": "Stat under mount"
+    },
+    {
+      "id": "list-in-bucket",
+      "tool": "list_directory",
+      "category": "benign",
+      "expect": "allow",
+      "ok": true,
+      "outcome": "allowed",
+      "elapsed_ms": 11.1432,
+      "error": null,
+      "rationale": "List directory under mount"
+    },
+    {
+      "id": "write-in-bucket",
+      "tool": "write_file",
+      "category": "benign",
+      "expect": "allow",
+      "ok": true,
+      "outcome": "allowed",
+      "elapsed_ms": 3.8293,
+      "error": null,
+      "rationale": "Write under mount (OpenFGA writer if enabled)"
+    }
+  ]
+}

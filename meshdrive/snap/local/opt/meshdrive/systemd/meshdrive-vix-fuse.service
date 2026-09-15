@@ -1,0 +1,15 @@
+[Unit]
+Description=MeshDrive VIX FUSE remote mount (paid tier, WireGuard)
+After=network.target wg-quick@wg0.service meshdrive-vix-gateway.service
+Wants=wg-quick@wg0.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/opt/meshdrive/etc/vix-fuse.env
+ExecStart=/opt/meshdrive/bin/vix_cpp_fuse --config /opt/meshdrive/etc/vix-fuse-backends.json
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+# Files excluded from the tree packed into the LXD build VM.
+# Do NOT ignore overlay/, src/, packaging/, or snap/local/.
+.git
+.venv
+venv
+**/__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.flatpak-build
+*.flatpak
+dist
+*.egg-info
+devroot
+**/.DS_Store
+agent-transcripts
+*.snap
+

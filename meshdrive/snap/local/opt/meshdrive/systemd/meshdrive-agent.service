@@ -1,0 +1,21 @@
+[Unit]
+Description=MeshDrive 2.0 local-first agent
+Documentation=file:///opt/meshdrive/pkg/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=MESHDRIVE_ROOT=/opt/meshdrive
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/meshdrive/bin/meshdrive-agent
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+# Agent formats/mounts FUSE and talks to systemd. Loopback control API only.
+NoNewPrivileges=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

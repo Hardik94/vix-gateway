@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from typing import Any
 
 from meshdrive.auth import list_users
@@ -23,6 +24,31 @@ def _component_status(ok: bool, missing: bool = False) -> str:
     if missing:
         return "missing"
     return "ready" if ok else "error"
+
+
+def _hostname_resolves(host: str) -> bool:
+    try:
+        socket.getaddrinfo(host, None)
+        return True
+    except OSError:
+        return False
+
+
+def _filebrowser_display_host(fb: dict[str, Any]) -> str:
+    """Prefer a host browsers can actually open.
+
+    ``meshdrive.local`` is nice on LAN (mDNS /etc/hosts) but causes Chrome
+    "This site can't be reached" when it does not resolve — common after login
+    if the TUI/bookmark used that name from another device.
+    """
+    preferred = str(fb.get("hostname") or "").strip()
+    if preferred and _hostname_resolves(preferred):
+        return preferred
+    fb_addr = fb.get("address")
+    if fb_addr not in (None, "", "0.0.0.0", "::", "*"):
+        return str(fb_addr)
+    # Reachable fallback for local TUI / same-host browsers.
+    return "127.0.0.1"
 
 
 def collect_state(*, agent_status: str = "running") -> dict[str, Any]:
@@ -53,14 +79,7 @@ def collect_state(*, agent_status: str = "running") -> dict[str, Any]:
         storage_rows.append(row)
 
     mounted_any = any(row.get("mounted") for row in storage_rows)
-    fb_host = str(fb.get("hostname") or "").strip()
-    fb_addr = fb.get("address")
-    if fb_host:
-        display_host = fb_host
-    elif fb_addr in (None, "", "0.0.0.0", "::"):
-        display_host = "meshdrive.local"
-    else:
-        display_host = str(fb_addr)
+    display_host = _filebrowser_display_host(fb)
     fb_url = f"http://{display_host}:{fb.get('port', 8080)}"
 
     state = default_state()
@@ -94,15 +113,34 @@ def collect_state(*, agent_status: str = "running") -> dict[str, Any]:
 
 
 def _overlay_addon_binaries(addons: dict[str, Any]) -> None:
-    if (BIN / "openfga").is_file() and addons.get("openfga", {}).get("status") == "not_installed":
+    from meshdrive.addons.openfga import which_openfga
+
+    if which_openfga() and addons.get("openfga", {}).get("status") == "not_installed":
         addons["openfga"]["status"] = "installed"
-        addons["openfga"]["message"] = "binary present; start meshdrive-openfga"
+        addons["openfga"]["message"] = "binary present; run meshdrive addons install openfga"
     if (BIN / "otelcol-contrib").is_file() and addons.get("telemetry", {}).get("status") == "not_installed":
         addons["telemetry"]["status"] = "installed"
         addons["telemetry"]["message"] = "binary present; start meshdrive-otel"
     if (BIN / "meshdrive-mcp").is_file() and addons.get("mcp", {}).get("status") == "not_installed":
         addons["mcp"]["status"] = "installed"
         addons["mcp"]["message"] = "wrapper present; run meshdrive addons install mcp if MCP extra is missing"
+    try:
+        from meshdrive.mcp import process as mcp_proc
+
+        if addons.get("mcp", {}).get("status") in {"ready", "installed"}:
+            if mcp_proc.mcp_port_open():
+                addons["mcp"]["message"] = (
+                    f"SSE {mcp_proc.mcp_sse_url()} + stdio (Bearer token for SSE)"
+                )
+                addons["mcp"]["port"] = mcp_proc.mcp_listen_port()
+            elif addons.get("mcp", {}).get("status") == "ready":
+                addons["mcp"]["message"] = (
+                    "stdio ready; SSE not listening on :9000 — "
+                    "re-run: meshdrive addons install mcp "
+                    f"(log: {mcp_proc.mcp_log_path()})"
+                )
+    except Exception:
+        pass
     if VIX_GATEWAY_BIN.is_file() and addons.get("vix_gateway", {}).get("status") == "not_installed":
         addons["vix_gateway"]["status"] = "installed"
         addons["vix_gateway"]["message"] = "binary present; run meshdrive addons install vix-gateway"

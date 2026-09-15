@@ -1,0 +1,15 @@
+#!/bin/sh
+# Re-seed dirs/DB if needed and ensure the agent daemon is enabled.
+set -e
+
+ROOT="${SNAP_COMMON:-/var/snap/meshdrive/common}"
+mkdir -p "$ROOT/var/log" "$ROOT/var/xdg-config" "$ROOT/var/xdg-data" "$ROOT/mnt" "$ROOT/etc"
+
+FB="$SNAP/opt/meshdrive/bin/filebrowser"
+DB="$ROOT/var/filebrowser.db"
+if [ -x "$FB" ] && [ ! -f "$DB" ]; then
+  "$FB" config init -d "$DB" >/dev/null 2>&1 || true
+fi
+
+# Always (re)enable — classic beta installs often leave the daemon inactive.
+snapctl start --enable meshdrive.agent || snapctl start meshdrive.agent || true

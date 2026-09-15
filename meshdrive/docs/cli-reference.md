@@ -34,6 +34,8 @@ meshdrive wireguard apply --file PATH [--v4 ADDR] [--v6 ADDR]
 meshdrive wireguard up | down | status
 meshdrive cluster configure --ldap-url URL [options]
 meshdrive cluster status
+meshdrive mcp credentials status|show|rotate|ensure
+meshdrive agent status|start|stop|restart
 ```
 
 ### `meshdrive status`
@@ -44,9 +46,9 @@ Prints version, license tier, install root, storage backends, and agent reachabi
 
 Diagnostics for a broken install:
 
-- CLI binaries on `PATH`
-- JuiceFS / Filebrowser / VIX binaries
-- Python venv
+- CLI binaries on `PATH` (or snap apps / `$SNAP/bin` wrappers)
+- JuiceFS / Filebrowser / VIX binaries (`$SNAP/opt/meshdrive/bin` under snap)
+- Python env (venv for deb/source; `python-packages` for snap)
 - `config.yaml` presence
 - License tier
 - `meshdrive-agent.service` state
@@ -100,6 +102,19 @@ sudo meshdrive wireguard down
 ```
 
 See [wireguard.md](wireguard.md).
+
+### `meshdrive mcp credentials`
+
+Install-time MCP API token (argon2 hash in `etc/mcp_credentials.yaml`). Not a Filebrowser user.
+
+```bash
+meshdrive mcp credentials status
+meshdrive mcp credentials show --consume   # one-time plaintext
+meshdrive mcp credentials rotate           # invalidate + print new secret
+meshdrive mcp credentials ensure           # create if missing
+```
+
+SSE clients must send `Authorization: Bearer <token>`. See [mcp.md](mcp.md).
 
 ### `meshdrive cluster`
 

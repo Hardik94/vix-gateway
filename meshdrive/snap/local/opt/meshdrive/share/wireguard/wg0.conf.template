@@ -1,0 +1,12 @@
+# Spoke peer template — see infra/wireguard-hub-spoke for hub-side gen-peer.sh
+# Copy rendered config to /etc/wireguard/wg0.conf via: sudo meshdrive wireguard apply --file …
+
+[Interface]
+PrivateKey = __CLIENT_PRIVATE_KEY__
+Address = __CLIENT_V4__/32, __CLIENT_V6__/128
+
+[Peer]
+PublicKey = __MAIN_PUBLIC_KEY__
+Endpoint = __MAIN_PUBLIC_IPV4__:51820
+AllowedIPs = 10.200.22.0/24, fde4:c0ff:ee22::/64
+PersistentKeepalive = 25

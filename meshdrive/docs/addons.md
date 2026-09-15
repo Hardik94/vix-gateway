@@ -43,7 +43,7 @@ meshdrive addons install mcp
 sudo systemctl status meshdrive-mcp
 ```
 
-Installs Python `[mcp]` extra into the MeshDrive venv (**`mcp>=1.2.0,<2`** — SDK 2.x breaks `list_tools`), writes `bin/meshdrive-mcp`, enables `meshdrive-mcp.service`.
+Installs Python `[mcp]` extra into the MeshDrive venv (**`mcp>=1.2.0,<2`** — SDK 2.x breaks `list_tools`), writes `bin/meshdrive-mcp`, enables `meshdrive-mcp.service`. On **snap**, extras ship in `python-packages` (no venv); use `snap run meshdrive.mcp` or `$SNAP_COMMON/bin/meshdrive-mcp`.
 
 If you see `Server object has no attribute list_tools`:
 
@@ -67,7 +67,7 @@ Fine-grained authorization for MCP file operations.
 meshdrive addons install openfga
 ```
 
-Downloads pinned OpenFGA binary, runs **`openfga migrate`** (sqlite schema), starts `meshdrive-openfga.service`, bootstraps store + model from `etc/openfga-model.json`, grants default tuples for storage backends.
+Downloads pinned OpenFGA binary, runs **`openfga migrate`** (sqlite schema), starts `meshdrive-openfga.service` (or a background process under **snap**), bootstraps store + model from `etc/openfga-model.json`, grants default tuples for storage backends.
 
 If status stays at 90% / “not reachable”:
 

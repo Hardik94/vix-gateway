@@ -4,21 +4,27 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
-from meshdrive.constants import BIN, ETC, VAR
+from meshdrive.constants import BIN, ETC, OPENFGA_BIN_CANDIDATES, VAR
 
 OPENFGA_HTTP = os.environ.get("MESHDRIVE_OPENFGA_HTTP", "http://127.0.0.1:8081")
 STORE_META = VAR / "openfga" / "store.json"
 MODEL_JSON = ETC / "openfga-model.json"
 OPENFGA_BIN = BIN / "openfga"
+OPENFGA_HTTP_ADDR = os.environ.get("MESHDRIVE_OPENFGA_HTTP_ADDR", "127.0.0.1:8081")
+OPENFGA_GRPC_ADDR = os.environ.get("MESHDRIVE_OPENFGA_GRPC_ADDR", "127.0.0.1:8082")
 
 
 def which_openfga() -> Path | None:
+    for cand in OPENFGA_BIN_CANDIDATES:
+        if cand.is_file() and os.access(cand, os.X_OK):
+            return cand
     if OPENFGA_BIN.is_file() and os.access(OPENFGA_BIN, os.X_OK):
         return OPENFGA_BIN
     return None
@@ -26,6 +32,108 @@ def which_openfga() -> Path | None:
 
 def available() -> bool:
     return which_openfga() is not None and STORE_META.is_file()
+
+
+def openfga_pid_path() -> Path:
+    return VAR / "openfga" / "openfga.pid"
+
+
+def openfga_db_uri() -> str:
+    return f"file:{(VAR / 'openfga' / 'openfga.db').resolve()}"
+
+
+def openfga_process_running() -> bool:
+    pid_path = openfga_pid_path()
+    if not pid_path.is_file():
+        return False
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def stop_openfga_process() -> None:
+    pid_path = openfga_pid_path()
+    if not pid_path.is_file():
+        return
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        try:
+            pid_path.unlink()
+        except OSError:
+            pass
+        return
+    try:
+        os.kill(pid, 15)
+    except OSError:
+        pass
+    try:
+        pid_path.unlink()
+    except OSError:
+        pass
+
+
+def start_openfga_process() -> None:
+    """Start OpenFGA as a background process (snap / no host unit)."""
+    if openfga_process_running():
+        return
+    binary = which_openfga()
+    if not binary:
+        raise RuntimeError("openfga binary not found")
+    og_dir = VAR / "openfga"
+    og_dir.mkdir(parents=True, exist_ok=True)
+    log = VAR / "log" / "openfga.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    db_uri = openfga_db_uri()
+    # Schema must exist before run (OpenFGA 1.x).
+    migrate = subprocess.run(
+        [
+            str(binary),
+            "migrate",
+            "--datastore-engine",
+            "sqlite",
+            "--datastore-uri",
+            db_uri,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if migrate.returncode != 0:
+        err = (migrate.stderr or migrate.stdout or "migrate failed").strip()
+        raise RuntimeError(f"openfga migrate failed: {err}")
+    cmd = [
+        str(binary),
+        "run",
+        "--datastore-engine",
+        "sqlite",
+        "--datastore-uri",
+        db_uri,
+        "--http-addr",
+        OPENFGA_HTTP_ADDR,
+        "--grpc-addr",
+        OPENFGA_GRPC_ADDR,
+        "--playground-enabled=false",
+        "--metrics-enabled=false",
+        "--log-format",
+        "json",
+    ]
+    with log.open("ab") as logf:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=logf,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            cwd=str(og_dir),
+        )
+    openfga_pid_path().write_text(f"{proc.pid}\n", encoding="utf-8")
 
 
 def _request(method: str, path: str, body: dict[str, Any] | None = None, timeout: float = 15.0) -> dict[str, Any]:
