@@ -1,7 +1,7 @@
 name: "meshdrive"
 arch: "amd64"
 platform: "linux"
-version: "2.2.5"
+version: "2.3.1"
 section: "utils"
 priority: "optional"
 maintainer: "Vistrix Labs - Meshdrive <info@vistrix.in>"
@@ -68,6 +68,8 @@ contents:
     dst: /etc/systemd/system/meshdrive-mount@.service
   - src: ../overlay/opt/meshdrive/systemd/meshdrive-filebrowser.service
     dst: /etc/systemd/system/meshdrive-filebrowser.service
+  - src: ../overlay/opt/meshdrive/systemd/meshdrive-mcp.service
+    dst: /etc/systemd/system/meshdrive-mcp.service
   - src: ../overlay/usr/share/applications/meshdrive-tui.desktop
     dst: /usr/share/applications/meshdrive-tui.desktop
   - src: ../overlay/opt/meshdrive/etc/config.yaml

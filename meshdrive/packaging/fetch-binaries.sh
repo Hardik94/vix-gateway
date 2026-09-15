@@ -71,6 +71,38 @@ want() {
   return 1
 }
 
+# Extract a single executable member from a tarball (avoid unpacking full trees).
+# OpenFGA release archives include assets/*.sql that hit EPERM under some snap/AppArmor setups.
+extract_binary_member() {
+  local tarball="$1"
+  local dest_dir="$2"
+  local bin_name="$3"
+  local member
+  member="$(
+    tar -tzf "${tarball}" 2>/dev/null | awk -v n="${bin_name}" '
+      $0 == n || $0 == "./" n { print; exit }
+      $0 ~ ("/" n "$") && $0 !~ /\/assets\// { print; exit }
+    '
+  )"
+  if [[ -z "${member}" ]]; then
+    echo "[meshdrive] ${bin_name} not found inside $(basename "${tarball}")" >&2
+    return 1
+  fi
+  # Do not unpack migrations/assets; skip xattrs/ACLs (common EPERM under snap).
+  local tar_opts=(--no-same-owner --no-same-permissions)
+  if tar --help 2>/dev/null | grep -q -- '--no-acls'; then
+    tar_opts+=(--no-acls)
+  fi
+  if tar --help 2>/dev/null | grep -q -- '--no-xattrs'; then
+    tar_opts+=(--no-xattrs)
+  fi
+  if tar --help 2>/dev/null | grep -q -- '--no-selinux'; then
+    tar_opts+=(--no-selinux)
+  fi
+  tar -xzf "${tarball}" -C "${dest_dir}" "${tar_opts[@]}" "${member}"
+}
+
+
 if want juicefs; then
   if [[ ! -x "${BIN}/juicefs" ]]; then
     echo "[meshdrive] downloading JuiceFS v${JFS_VERSION} (${JFS_ARCH})"
@@ -119,14 +151,16 @@ if want openfga; then
   if [[ ! -x "${BIN}/openfga" ]]; then
     echo "[meshdrive] downloading OpenFGA v${OPENFGA_VERSION} (${OG_ARCH})"
     og_dir="${TMP}/openfga"
+    rm -rf "${og_dir}"
     mkdir -p "${og_dir}"
     og_tarball="${TMP}/openfga_${OPENFGA_VERSION}_linux_${OG_ARCH}.tar.gz"
     curl -fsSL -L -o "${og_tarball}" \
       "https://github.com/openfga/openfga/releases/download/v${OPENFGA_VERSION}/openfga_${OPENFGA_VERSION}_linux_${OG_ARCH}.tar.gz"
-    tar -xzf "${og_tarball}" -C "${og_dir}"
-    found="$(find "${og_dir}" -maxdepth 2 -type f -name openfga | head -n 1 || true)"
+    # Full extract fails under snap with EPERM on assets/migrations/*.sql — binary only.
+    extract_binary_member "${og_tarball}" "${og_dir}" openfga
+    found="$(find "${og_dir}" -maxdepth 3 -type f -name openfga | head -n 1 || true)"
     if [[ -z "${found}" ]]; then
-      echo "[meshdrive] openfga binary missing from tarball" >&2
+      echo "[meshdrive] openfga binary missing after extract" >&2
       exit 1
     fi
     install -m 0755 "${found}" "${BIN}/openfga"
@@ -139,12 +173,15 @@ if want otel; then
   if [[ ! -x "${BIN}/otelcol-contrib" ]]; then
     echo "[meshdrive] downloading otelcol-contrib v${OTEL_VERSION} (${OT_ARCH})"
     ot_dir="${TMP}/otelcol"
+    rm -rf "${ot_dir}"
     mkdir -p "${ot_dir}"
     ot_tarball="${TMP}/otelcol-contrib_${OTEL_VERSION}_linux_${OT_ARCH}.tar.gz"
     curl -fsSL -L -o "${ot_tarball}" \
       "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTEL_VERSION}/otelcol-contrib_${OTEL_VERSION}_linux_${OT_ARCH}.tar.gz"
-    tar -xzf "${ot_tarball}" -C "${ot_dir}"
-    found="$(find "${ot_dir}" -maxdepth 2 -type f -name otelcol-contrib | head -n 1 || true)"
+    if ! extract_binary_member "${ot_tarball}" "${ot_dir}" otelcol-contrib; then
+      tar -xzf "${ot_tarball}" -C "${ot_dir}" --no-same-owner --no-same-permissions
+    fi
+    found="$(find "${ot_dir}" -maxdepth 3 -type f -name otelcol-contrib | head -n 1 || true)"
     if [[ -z "${found}" ]]; then
       echo "[meshdrive] otelcol-contrib binary missing from tarball" >&2
       exit 1

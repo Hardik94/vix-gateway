@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,9 @@ FORBIDDEN = frozenset(
     }
 )
 
+# Default OpenFGA principal; SSE may override per verified MCP token.
 MCP_USER = "agent:mcp"
+_mcp_subject: ContextVar[str] = ContextVar("meshdrive_mcp_subject", default=MCP_USER)
 
 # Meta tools — no OpenFGA object; isolation still enforced in handlers when paths are used.
 OPENFGA_SKIP = frozenset({"health_check", "get_version", "list_storage_backends"})
@@ -84,7 +87,7 @@ def _authorize(name: str, arguments: dict[str, Any]) -> None:
     else:
         return
 
-    if not openfga.check(MCP_USER, relation, object_id):
+    if not openfga.check(_mcp_subject.get(), relation, object_id):
         raise PermissionError(f"OpenFGA denied {relation} on {object_id}")
 
 
@@ -312,13 +315,26 @@ async def _run_sse() -> None:
     from mcp.server.sse import SseServerTransport
     from mcp.types import TextContent
     from starlette.applications import Starlette
-    from starlette.responses import JSONResponse
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse, Response
     from starlette.routing import Mount, Route
     import logging
     import uvicorn
 
+    from meshdrive.mcp import credentials as mcp_creds
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     log = logging.getLogger("meshdrive.mcp")
+
+    created = mcp_creds.ensure_install_token()
+    if created:
+        log.warning(
+            "MCP API token created — retrieve once with: meshdrive mcp credentials show --consume"
+        )
+    elif not mcp_creds.configured():
+        log.error("MCP credentials missing; refusing SSE start")
+        raise RuntimeError("MCP credentials not configured")
 
     host = os.environ.get("MESHDRIVE_MCP_HOST", "127.0.0.1")
     port = int(os.environ.get("MESHDRIVE_MCP_PORT", "9000"))
@@ -343,12 +359,55 @@ async def _run_sse() -> None:
             payload = json.dumps({"error": str(exc)})
         return [TextContent(type="text", text=payload)]
 
+    class McpTokenMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next) -> Response:
+            path = request.url.path
+            if path in {"/ready", "/ready/"}:
+                return await call_next(request)
+            token = mcp_creds.extract_bearer(
+                request.headers.get("authorization"),
+                alt_header=request.headers.get("x-meshdrive-token"),
+            )
+            # Env fallback for local proxies that inject the secret
+            if not token:
+                token = os.environ.get("MESHDRIVE_MCP_TOKEN")
+            token_id = None
+            try:
+                token_id = mcp_creds.verify_token(token)
+            except PermissionError as exc:
+                log.error("MCP credentials unreadable: %s", exc)
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "credentials_unreadable",
+                        "hint": str(exc),
+                    },
+                    status_code=503,
+                )
+            if not token_id:
+                log.warning("MCP SSE unauthorized path=%s client=%s", path, request.client)
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "unauthorized",
+                        "hint": "Send Authorization: Bearer <token> from meshdrive mcp credentials",
+                    },
+                    status_code=401,
+                )
+            subject = mcp_creds.openfga_subject_for_token_id(token_id)
+            reset = _mcp_subject.set(subject)
+            try:
+                return await call_next(request)
+            finally:
+                _mcp_subject.reset(reset)
+
     async def handle_sse(request):
         log.info("SSE connect from %s", request.client)
         async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
             await server.run(streams[0], streams[1], server.create_initialization_options())
 
     async def handle_ready(_request):
+        st = mcp_creds.status()
         return JSONResponse(
             {
                 "ok": True,
@@ -356,7 +415,13 @@ async def _run_sse() -> None:
                 "sse": "/sse",
                 "messages": "/messages/",
                 "tools": list(TOOL_SCHEMAS.keys()),
-                "note": "GET /sse only; POST client messages to /messages/?session_id=…",
+                "auth": {
+                    "required": True,
+                    "scheme": "Bearer",
+                    "configured": st.get("configured"),
+                    "token_prefixes": [t.get("prefix") for t in st.get("tokens") or []],
+                },
+                "note": "GET /sse with Authorization: Bearer <mcp-token>; POST /messages/?session_id=…",
             }
         )
 
@@ -367,7 +432,8 @@ async def _run_sse() -> None:
             Mount("/messages/", app=sse.handle_post_message),
         ]
     )
-    log.info("MeshDrive MCP SSE listening on http://%s:%s/sse", host, port)
+    app.add_middleware(McpTokenMiddleware)
+    log.info("MeshDrive MCP SSE listening on http://%s:%s/sse (Bearer token required)", host, port)
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     await uvicorn.Server(config).serve()
 

@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "description": "Legitimate in-bucket operations — MeshDrive MCP must ALLOW (false-positive check).",
+  "cases": [
+    {
+      "id": "list-buckets-default",
+      "tool": "list_directory",
+      "arguments": {},
+      "category": "benign",
+      "expect": "allow",
+      "rationale": "Listing storage buckets without a path is intentional"
+    },
+    {
+      "id": "health",
+      "tool": "health_check",
+      "arguments": {},
+      "category": "benign",
+      "expect": "allow",
+      "rationale": "Meta tool; OpenFGA skipped"
+    },
+    {
+      "id": "version",
+      "tool": "get_version",
+      "arguments": {},
+      "category": "benign",
+      "expect": "allow",
+      "rationale": "Meta tool"
+    },
+    {
+      "id": "list-backends",
+      "tool": "list_storage_backends",
+      "arguments": {},
+      "category": "benign",
+      "expect": "allow",
+      "rationale": "Inventory of configured JuiceFS backends"
+    },
+    {
+      "id": "read-in-bucket",
+      "tool": "read_file",
+      "arguments": {"path": "{{MOUNT}}/safe.txt"},
+      "category": "benign",
+      "expect": "allow",
+      "rationale": "Read file under configured mount",
+      "requires_mount": true
+    },
+    {
+      "id": "stat-in-bucket",
+      "tool": "get_file_info",
+      "arguments": {"path": "{{MOUNT}}/safe.txt"},
+      "category": "benign",
+      "expect": "allow",
+      "rationale": "Stat under mount",
+      "requires_mount": true
+    },
+    {
+      "id": "list-in-bucket",
+      "tool": "list_directory",
+      "arguments": {"path": "{{MOUNT}}"},
+      "category": "benign",
+      "expect": "allow",
+      "rationale": "List directory under mount",
+      "requires_mount": true
+    },
+    {
+      "id": "write-in-bucket",
+      "tool": "write_file",
+      "arguments": {"path": "{{MOUNT}}/bench-write.txt", "content": "ok"},
+      "category": "benign",
+      "expect": "allow",
+      "rationale": "Write under mount (OpenFGA writer if enabled)",
+      "requires_mount": true
+    }
+  ]
+}

@@ -1,3 +1,3 @@
 """MeshDrive 2.0 local-first agent."""
 
-__version__ = "2.2.5"
+__version__ = "2.3.10"

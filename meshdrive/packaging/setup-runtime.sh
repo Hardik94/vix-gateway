@@ -148,6 +148,9 @@ if [[ -d "${ROOT}/systemd" ]]; then
   install -m 0644 "${ROOT}/systemd/meshdrive-agent.service" /etc/systemd/system/meshdrive-agent.service
   install -m 0644 "${ROOT}/systemd/meshdrive-mount@.service" /etc/systemd/system/meshdrive-mount@.service
   install -m 0644 "${ROOT}/systemd/meshdrive-filebrowser.service" /etc/systemd/system/meshdrive-filebrowser.service
+  if [[ -f "${ROOT}/systemd/meshdrive-mcp.service" ]]; then
+    install -m 0644 "${ROOT}/systemd/meshdrive-mcp.service" /etc/systemd/system/meshdrive-mcp.service
+  fi
 fi
 if [[ -f "${ROOT}/systemd/sudoers" ]]; then
   install -m 0440 "${ROOT}/systemd/sudoers" /etc/sudoers.d/meshdrive

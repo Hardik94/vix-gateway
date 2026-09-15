@@ -7,7 +7,7 @@ MeshDrive 2.0 is a **local-first** Linux storage agent: JuiceFS on local disks, 
 | Document | Description |
 |----------|-------------|
 | [Architecture](architecture.md) | Components, data flow, directory layout, isolation model |
-| [Installation](installation.md) | Snap, Flatpak, `.deb`, and developer installs |
+| [Installation](installation.md) | Snap, Flatpak, `.deb`, Docker, and developer installs |
 | [Storage](storage.md) | JuiceFS backends, capacity, multi-volume Filebrowser |
 | [User ↔ bucket ACL](storage-acl.md) | Many-to-many assign, portals, TUI (2.2) |
 | [Pinned binaries](binaries.md) | JuiceFS/Filebrowser versions and upgrade plan |
@@ -23,6 +23,7 @@ MeshDrive 2.0 is a **local-first** Linux storage agent: JuiceFS on local disks, 
 | [Agent API](agent-api.md) | Loopback JSON control API used by the TUI |
 | [MCP integration](mcp.md) | AI tool server, path isolation, OpenFGA |
 | [MCP clients](mcp-clients.md) | Connect Cursor, Claude Code, Open WebUI, Hermes |
+| [Security benchmark](../benchmark/README.md) | Unauthorized blocking metrics; Claude Connectors checklist |
 | [Development](development.md) | Hacking on the Python package without a full install |
 | [Testing](TESTING.md) | Regression, snap, WireGuard lab, isolation checks |
 | [Troubleshooting](troubleshooting.md) | Common failures and log locations |

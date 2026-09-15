@@ -20,8 +20,10 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/meshdrive/var /opt/meshdrive/mnt
-ReadOnlyPaths=/opt/meshdrive/etc /opt/meshdrive/bin
+# etc must be writable: argon2 may rehash mcp_credentials.yaml on verify;
+# var holds once-file + logs; mnt for future path ops.
+ReadWritePaths=/opt/meshdrive/var /opt/meshdrive/mnt /opt/meshdrive/etc
+ReadOnlyPaths=/opt/meshdrive/bin
 IPAddressDeny=any
 IPAddressAllow=127.0.0.1/32 ::1/128
 

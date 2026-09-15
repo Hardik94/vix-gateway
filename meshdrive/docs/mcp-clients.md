@@ -5,8 +5,9 @@ This guide shows how to attach **Cursor**, **Claude Code**, **Open WebUI**, and 
 ## Prerequisites (once)
 
 ```bash
-# Free addon
+# Free addon — also creates an MCP API token (not a Filebrowser user)
 meshdrive addons install mcp
+meshdrive mcp credentials show --consume   # save this for SSE clients
 # or
 sudo meshdrive-addons install mcp
 
@@ -24,7 +25,7 @@ meshdrive-tui   # Storage → Add → Mount → Start Filebrowser
 | Transport | When to use | Endpoint / command |
 |-----------|-------------|--------------------|
 | **stdio** | Cursor, Claude Code, most desktop agents | `/opt/meshdrive/bin/meshdrive-mcp` |
-| **SSE** | Open WebUI, HTTP-based tools | `http://127.0.0.1:9000/sse` |
+| **SSE** | Open WebUI, HTTP-based tools | `http://127.0.0.1:9000/sse` + `Authorization: Bearer <token>` |
 
 Snap installs: replace `/opt/meshdrive` with `/var/snap/meshdrive/common` and use the snap binary path if wrappers differ.
 
@@ -69,6 +70,9 @@ Create or merge **`.cursor/mcp.json`** in your project (or global Cursor MCP set
 3. Try: *“list_directory /opt/meshdrive/mnt/primary”*
 
 **Do not** ask the agent to read `/etc/passwd` — MeshDrive must deny it.
+
+Security benchmark (unauthorized blocking metrics) and Claude Connectors Directory
+gap analysis: [benchmark/README.md](../benchmark/README.md).
 
 ---
 

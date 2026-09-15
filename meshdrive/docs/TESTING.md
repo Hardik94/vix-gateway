@@ -145,6 +145,15 @@ test ! -d "$HOME/.config/meshdrive" && echo "OK: no home config"
 # MCP read_file under /opt/meshdrive/mnt/primary/... → allowed
 ```
 
+Automated unauthorized-blocking benchmark (CI-safe fixture):
+
+```bash
+cd meshdrive-2.0
+PYTHONPATH=src python3 benchmark/runner/run_isolation_bench.py --fixture \
+  --out benchmark/results/run.json
+# Expect: ASR 0%, blocked 15/15 — see benchmark/README.md
+```
+
 Snap installs use `$SNAP_COMMON` (e.g. `/var/snap/meshdrive/common`) instead of `/opt/meshdrive`; same subtree layout.
 
 ---

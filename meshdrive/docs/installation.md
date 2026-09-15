@@ -1,17 +1,32 @@
 # Installation
 
-MeshDrive 2.0 supports four install paths. **Snap is recommended for end users**; Flatpak suits desktop Linux distros; `.deb` and `install.sh` suit developers and enterprise deployments.
+MeshDrive 2.0 supports five install paths. **Snap is recommended for end users** on Linux; **Docker** is recommended on macOS labs (pulls the published `.deb`); Flatpak suits desktop Linux; `.deb` and `install.sh` suit developers and enterprise hosts.
 
 ## Requirements
 
-- **OS:** Debian or Ubuntu (amd64 or arm64) for Snap/`.deb`; any Flatpak-capable Linux for Flatpak
-- **Init:** systemd (Snap/`.deb`); Flatpak runs the agent via `flatpak run`
-- **Kernel:** FUSE (`fuse3` or `fuse`)
+- **OS:** Debian or Ubuntu (amd64 or arm64) for Snap/`.deb`; any Flatpak-capable Linux for Flatpak; **Docker** (linux/amd64 image) for Mac/Windows labs
+- **Init:** systemd (Snap/`.deb`); Flatpak runs the agent via `flatpak run`; Docker runs `meshdrive-agent` in the foreground
+- **Kernel:** FUSE (`fuse3` or `fuse`) — Docker Compose enables `/dev/fuse` + privileged
 - **Python:** 3.10+ (venv created automatically on install; bundled in Flatpak)
 - **Tools:** `curl`, `ca-certificates`, `tar` (host tools for Snap/`.deb` builds)
 - **Disk:** ~1 GB for binaries, venv, and cache (data disks are separate)
 
 First install needs outbound HTTPS for PyPI and GitHub releases (JuiceFS **v1.4.1**, Filebrowser **v2.63.23**). After that, **free tier** operation does not require the internet.
+
+---
+
+## Option 0 — Docker (macOS / any Docker host, no source tree)
+
+Installs [Meshdrive v2.3.1 `.deb`](https://github.com/Hardik94/vix-gateway/releases/tag/v2.3.1) inside Ubuntu 24.04. The image does **not** include your git checkout.
+
+```bash
+cd meshdrive-2.0/docker
+docker compose up --build
+curl -sS http://127.0.0.1:12700/health
+docker exec -it meshdrive meshdrive-tui
+```
+
+Full notes: [docker/README.md](../docker/README.md).
 
 ---
 
@@ -43,10 +58,18 @@ snapcraft pack --destructive-mode --build-for=amd64
 
 ### Install
 
+Host FUSE is required (the snap does **not** ship a working `fusermount3`):
+
+```bash
+sudo apt-get install -y fuse3
+sudo modprobe fuse
+grep -E '^user_allow_other' /etc/fuse.conf || echo user_allow_other | sudo tee -a /etc/fuse.conf
+```
+
 ```bash
 # Local/unsigned builds need --dangerous; this snap is classic confinement.
 # Store "beta" channel still needs classic confinement approval from Snap Store.
-sudo snap install --dangerous --classic ./meshdrive_2.2.4_amd64.snap
+sudo snap install --dangerous --classic ./meshdrive_2.3.5_amd64.snap
 sudo snap start meshdrive.agent
 snap run meshdrive.doctor
 snap run meshdrive.tui

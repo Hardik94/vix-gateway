@@ -74,6 +74,8 @@ FILEBROWSER_DB = VAR / "filebrowser.db"
 BOOTSTRAP_PASSWORD = VAR / "bootstrap-password.txt"
 CONTROL_LOG = VAR / "log" / "agent.log"
 WG_STATE = VAR / "wireguard" / "state.json"
+MCP_CREDENTIALS_PATH = ETC / "mcp_credentials.yaml"
+MCP_TOKEN_ONCE_PATH = VAR / "mcp-token-once.txt"
 
 CONTROL_HOST = os.environ.get("MESHDRIVE_CONTROL_HOST", "127.0.0.1")
 CONTROL_PORT = int(os.environ.get("MESHDRIVE_CONTROL_PORT", "12700"))

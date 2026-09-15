@@ -43,6 +43,19 @@ df -h /opt/meshdrive/mnt/primary
 # JuiceFS:…       100G  …     …     …  /opt/meshdrive/mnt/primary
 ```
 
+### Filebrowser usage / progress bar
+
+Filebrowser’s bar is **`statfs` of the user scope** (or server root).
+
+| Setup | What the bar shows |
+|-------|--------------------|
+| Server root `$ROOT/mnt`, admin scope = `fifth` (single mount) | JuiceFS capacity for that bucket |
+| Server root `$ROOT/mnt`, scope `.` (multi-bucket) | Host disk under `mnt/` |
+
+**Do not** set server `--root` to `$ROOT/mnt/<bucket>` while also storing an absolute `/opt/...` scope — Filebrowser joins them and fails with `lstat …/mnt/bucket/opt`.
+
+MeshDrive **2.3.9+** keeps root at `$ROOT/mnt` and sets a **relative** scope (`fifth`) for a single mounted bucket.
+
 ### Existing volume still shows 1.0P
 
 If the TUI already has a size but `df` shows `1.0P`, capacity was never written into JuiceFS metadata. Remount after updating the agent, or set it once:

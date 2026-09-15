@@ -16,8 +16,8 @@ class AddStorageScreen(ModalScreen[dict | None]):
             yield Static("Add storage backend", classes="dialog-title")
             yield Label("Name")
             yield Input(value="primary", id="name")
-            yield Label("Data path (directory on the disk to use)")
-            yield Input(placeholder="/opt/meshdrive/var/data/primary", id="data_path")
+            yield Label("Data path (leave blank for default under MeshDrive root)")
+            yield Input(placeholder="blank = $ROOT/var/data/<name>", id="data_path")
             yield Label("Size / capacity (GB) — leave empty for unlimited")
             yield Input(placeholder="e.g. 100 or 100G", id="capacity_gb")
             with Horizontal(classes="dialog-buttons"):

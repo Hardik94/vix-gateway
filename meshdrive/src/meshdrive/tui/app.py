@@ -354,6 +354,8 @@ class MeshDriveTUI(App[None]):
             self.action_refresh()
         except AgentError as exc:
             self.notify(str(exc), severity="error", title="MeshDrive")
+        except Exception as exc:  # noqa: BLE001
+            self.notify(f"{type(exc).__name__}: {exc}", severity="error", title="MeshDrive")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id

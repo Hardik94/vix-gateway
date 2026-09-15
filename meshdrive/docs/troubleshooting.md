@@ -41,10 +41,37 @@ curl -sS http://127.0.0.1:12700/health
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Mount fails | FUSE not loaded | `sudo modprobe fuse`; check `/etc/fuse.conf` has `user_allow_other` |
+| Mount fails | FUSE not loaded / snap fusermount | `sudo apt-get install -y fuse3`; `sudo modprobe fuse`; enable `user_allow_other` in `/etc/fuse.conf`; rebuild **2.3.5+** (host fusermount PATH) |
 | Permission denied on mount | Data path missing or wrong owner | Create data path; ensure writable |
-| Mount OK but empty in Filebrowser | `allow_other` missing | Enable `user_allow_other` in fuse.conf; remount |
+| Mount OK but empty in Filebrowser | FB Bolt DB root stale / not `$ROOT/mnt` | Rebuild **2.3.7+**; or: stop FB, `filebrowser config set -d …/filebrowser.db --root /opt/meshdrive/mnt`, start FB |
+| Filebrowser usage bar ignores bucket size | Root was `$ROOT/mnt` (host disk); capacity needs remount | Rebuild **2.3.8+**; or set root to mount + remount (see below) |
+| Login then `lstat …/mnt/NAME/opt` | Root and scope both absolute `/opt/meshdrive/...` (joined) | Rebuild **2.3.9+**; workaround below |
+| MCP install OK but nothing on :9000 (deb) | Unit not copied/enabled | Rebuild **2.3.7+**; `sudo systemctl enable --now meshdrive-mcp`; `curl -sS http://127.0.0.1:9000/ready` |
+| MCP **401** without token | Expected for SSE | Send `Authorization: Bearer …` from `meshdrive mcp credentials show` |
+| MCP **500/503** + `Permission denied: …/mcp_credentials.yaml` | File owned by root or unit marked `/etc` read-only | See below (fixed in **2.3.10**) |
 | `juicefs: command not found` | Binary fetch failed | `bash /opt/meshdrive/packaging/fetch-binaries.sh /opt/meshdrive` |
+
+### MCP credentials Permission denied (deb)
+
+`meshdrive-mcp.service` runs as user **`meshdrive`**. If the token file was created with `sudo`, it can be `root:root` mode `0600`, so every Bearer request fails. Older units also marked `/opt/meshdrive/etc` **read-only**, which breaks argon2 rehash writes.
+
+**Immediate fix (no rebuild):**
+
+```bash
+sudo chown meshdrive:meshdrive /opt/meshdrive/etc /opt/meshdrive/etc/mcp_credentials.yaml
+sudo chmod 750 /opt/meshdrive/etc
+sudo chmod 600 /opt/meshdrive/etc/mcp_credentials.yaml
+# Refresh unit (2.3.10+ overlay) or edit ReadWritePaths to include etc:
+sudo cp /opt/meshdrive/systemd/meshdrive-mcp.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now meshdrive-mcp
+curl -sS http://127.0.0.1:9000/ready
+# With token:
+TOKEN=$(sudo meshdrive mcp credentials show 2>/dev/null | head -1)
+curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9000/ready
+```
+
+After reboot, if MCP is down: `sudo systemctl enable --now meshdrive-mcp`.
 
 Logs:
 
@@ -63,7 +90,8 @@ journalctl -u 'meshdrive-mount@*' -b --no-pager
 | 403 / empty UI | Mount not up or wrong root | Mount storage first; check `filebrowser.json` root |
 | Invalid credentials | User in MeshDrive but not synced to Filebrowser DB; short password (&lt;12); or DB lock while service running | See recovery below |
 | Cannot log in | No users / wrong password | Check `var/bootstrap-password.txt` or create user in TUI |
-| OpenFGA not healthy | Missing `openfga migrate` or unit crash | `journalctl -u meshdrive-openfga`; re-run `meshdrive addons install openfga` |
+| Login works, then “can't be reached” | Opened via `meshdrive.local` which does not resolve on that client | Use `http://127.0.0.1:8080` on the host, or LAN IP / Avahi (see below) |
+| OpenFGA not healthy | Missing `openfga migrate` or unit/process not running | `.deb`: `journalctl -u meshdrive-openfga`; **snap**: `tail -f $SNAP_COMMON/var/log/openfga.log` then re-run `meshdrive addons install openfga` |
 
 ```bash
 journalctl -u meshdrive-filebrowser -b --no-pager
@@ -163,6 +191,7 @@ meshdrive wireguard status
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| TUI: `RemoteDisconnected` on Add storage | Agent crashed mid-request (often juicefs format) | `journalctl -u snap.meshdrive.agent.service -b --no-pager \| tail -80`; ensure juicefs works: `$SNAP/opt/meshdrive/bin/juicefs version` |
 | `Permission denied` on `:12700` (errno 13) | Snap not classic, or bound as `localhost`/IPv6 | Reinstall with `--classic`; `snap info meshdrive \| grep confinement` must say classic; bind is `127.0.0.1` |
 | Agent not running / TUI offline | Snap daemon not started | `sudo snap start meshdrive.agent` (unit: `snap.meshdrive.agent.service` — **not** `meshdrive-agent`) |
 | `Unit meshdrive-agent.service not found` | Expected on snap | Use `sudo snap start meshdrive.agent` |
@@ -170,6 +199,12 @@ meshdrive wireguard status
 | Data not in `/opt/meshdrive` | Expected — snap uses `$SNAP_COMMON` via layout | Use `/var/snap/meshdrive/common` or `/opt/meshdrive` inside snap |
 | FUSE/WG issues | Classic snap still needs host fuse | Install host `fuse3`; run WG with sudo on host |
 | Command not on PATH | Snap apps not aliased | `snap run meshdrive.doctor` |
+| MCP install fails | Pre-2.3.2 tried host venv/`pip` | Rebuild **2.3.2+** snap (ships `[mcp]`); then `snap run meshdrive.addons install mcp` |
+| OpenFGA stuck at ~90% | No host systemd unit under snap; process never started | Rebuild **2.3.2+**; `snap run meshdrive.addons install openfga`; log: `$SNAP_COMMON/var/log/openfga.log` |
+| OpenFGA tar `assets/… operation not permitted` | Full release unpack blocked under snap | Rebuild **2.3.3+** (binary-only extract + shipped openfga); retry install |
+| Storage create `PermissionError` after sudo OpenFGA | Data path `/opt/meshdrive/...` or root-owned dirs after sudo | Rebuild **2.3.4+**; leave Data path **blank**; or `sudo chown -R root:root /var/snap/meshdrive/common` |
+| JuiceFS mount fails (create OK) | Snap PATH used staged `fusermount3` (no setuid) or missing `user_allow_other` | Host: `sudo apt-get install -y fuse3`; enable `user_allow_other`; rebuild **2.3.5+**; log: `$SNAP_COMMON/var/log/juicefs-mount.log` |
+| Filebrowser via `meshdrive.local` fails | Name not in hosts / no mDNS on client | Prefer `http://127.0.0.1:8080` or LAN IP; install Avahi for LAN name |
 
 ---
 

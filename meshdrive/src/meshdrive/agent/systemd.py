@@ -8,9 +8,24 @@ import subprocess
 from pathlib import Path
 
 
+def running_under_snap() -> bool:
+    """True only when this process is inside the meshdrive snap runtime.
+
+    A leftover ``/snap/meshdrive/current`` on a host that also has the ``.deb``
+    must not disable host systemd units (mount / Filebrowser / MCP).
+    """
+    if not os.environ.get("SNAP"):
+        return False
+    # Prefer explicit snap name when present; otherwise any SNAP+SNAP_COMMON is enough.
+    name = os.environ.get("SNAP_NAME", "")
+    if name and name != "meshdrive":
+        return False
+    return True
+
+
 def snap_installed() -> bool:
-    """True when the meshdrive snap is present (even outside snap-run env)."""
-    if os.environ.get("SNAP"):
+    """True when the meshdrive snap package exists on the host (may coexist with .deb)."""
+    if running_under_snap():
         return True
     return Path("/snap/meshdrive/current").exists()
 
@@ -25,7 +40,7 @@ def use_host_units() -> bool:
     Classic snap still has systemd, but the package units are not installed under
     /etc/systemd/system. Prefer direct juicefs/filebrowser process management.
     """
-    if snap_installed():
+    if running_under_snap():
         return False
     return systemd_available()
 
@@ -89,12 +104,12 @@ def snap_agent_unit() -> str:
 
 def agent_unit() -> str:
     """Snap: snap.meshdrive.agent.service — never meshdrive-agent.service."""
-    if snap_installed():
+    if running_under_snap():
         return snap_agent_unit()
     return "meshdrive-agent.service"
 
 
 def agent_start_hint() -> str:
-    if snap_installed():
+    if running_under_snap():
         return "sudo snap start meshdrive.agent"
     return "sudo systemctl start meshdrive-agent.service"

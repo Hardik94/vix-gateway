@@ -7,7 +7,7 @@
 
 name: meshdrive
 base: core22
-version: "2.2.5"
+version: "2.3.10"
 summary: MeshDrive 2.0 local-first storage with optional paid remote tier
 description: |
   MeshDrive 2.0 is a local-first JuiceFS + Filebrowser agent with Textual TUI.
@@ -15,7 +15,7 @@ description: |
   Paid tier (license token): WireGuard hub-spoke, VIX gateway/FUSE, SSSD/LDAP, remote cluster.
 
 grade: devel
-confinement: strict
+confinement: classic
 
 # Same recipe builds both arches. Pack on each arch (or Launchpad remote-build):
 #   snapcraft pack --build-for=amd64
@@ -142,13 +142,16 @@ parts:
       SITE="${ROOT}/python-packages"
       mkdir -p "${SITE}"
       python3 -m pip install --upgrade pip wheel
-      python3 -m pip install --target="${SITE}" "${ROOT}/pkg"
-      PYTHONPATH="${SITE}" python3 -c "import meshdrive; print('meshdrive', meshdrive.__version__)"
+      # Include [mcp] so `addons install mcp` does not need network pip at runtime.
+      python3 -m pip install --target="${SITE}" "${ROOT}/pkg[mcp]"
+      PYTHONPATH="${SITE}" python3 -c "import meshdrive, mcp, uvicorn, starlette; print('meshdrive', meshdrive.__version__)"
       test -d "${SITE}/meshdrive"
       # Must succeed: doctor and runtime look under $SNAP/opt/meshdrive/bin.
-      bash "${ROOT}/packaging/fetch-binaries.sh" "${ROOT}"
+      # Ship openfga too so addon install does not need a full tar extract at runtime.
+      bash "${ROOT}/packaging/fetch-binaries.sh" "${ROOT}" juicefs filebrowser openfga
       test -x "${ROOT}/bin/juicefs"
       test -x "${ROOT}/bin/filebrowser"
+      test -x "${ROOT}/bin/openfga"
 
       write_wrapper() {
         _out="$1"
@@ -164,7 +167,8 @@ parts:
           echo 'PY="${SNAP}/usr/bin/python3"'
           echo 'if [ ! -x "${PY}" ]; then PY="$(command -v python3)"; fi'
           echo 'export PYTHONPATH="${SITE}${PYTHONPATH:+:$PYTHONPATH}"'
-          echo 'export PATH="${SNAP}/opt/meshdrive/bin:${SNAP}/usr/bin:${PATH:-/usr/bin}"'
+          echo '# Host /usr/bin before $SNAP/usr/bin so fusermount3 is the setuid host binary.'
+          echo 'export PATH="${SNAP}/opt/meshdrive/bin:/usr/bin:/bin:${SNAP}/usr/bin:${PATH:-}"'
           echo 'export HOME="${MESHDRIVE_ROOT}/var"'
           echo 'export XDG_CONFIG_HOME="${MESHDRIVE_ROOT}/var/xdg-config"'
           echo 'export XDG_DATA_HOME="${MESHDRIVE_ROOT}/var/xdg-data"'
@@ -195,7 +199,8 @@ parts:
     stage-packages:
       - python3
       - python3-pip
-      - fuse3
+      # Do NOT stage fuse3: snap fusermount3 lacks setuid and breaks JuiceFS mounts.
+      # Host must provide fuse3 (documented in installation.md).
       - curl
       - ca-certificates
       - tar

@@ -172,6 +172,23 @@ def run(verbose: bool = False) -> dict[str, Any]:
     if is_readonly_snap_path(log_dir) or is_revision_data_path(log_dir):
         issues.append(f"log dir under wrong snap path ({log_dir})")
 
+    from meshdrive.storage.juicefs import (
+        _host_fusermount,
+        fuse_available,
+        user_allow_other_enabled,
+    )
+
+    if not fuse_available():
+        issues.append("FUSE unavailable — sudo apt-get install -y fuse3 && sudo modprobe fuse")
+    elif _host_fusermount() is None and os.environ.get("SNAP"):
+        issues.append(
+            "host fusermount3 missing (snap cannot use staged fusermount) — sudo apt-get install -y fuse3"
+        )
+    if not user_allow_other_enabled():
+        issues.append(
+            "user_allow_other not set in /etc/fuse.conf — required for JuiceFS allow_other / Filebrowser"
+        )
+
     lic = status_dict()
     agent_unit = agent_systemd.agent_unit()
     agent = _check_systemd_unit(agent_unit)
@@ -182,6 +199,21 @@ def run(verbose: bool = False) -> dict[str, Any]:
     elif agent.get("available") and not agent.get("ok"):
         # HTTP ok but unit inactive is odd; still note unit state.
         pass
+
+    mcp_creds_report: dict[str, Any] | None = None
+    try:
+        from meshdrive.config import load_config, root
+        from meshdrive.mcp import credentials as mcp_creds
+
+        mcp_status = (root(load_config()).get("mcp") or {}).get("status")
+        if mcp_status in {"ready", "installed"} or mcp_creds.configured():
+            mcp_creds_report = mcp_creds.status()
+            if not mcp_creds_report.get("configured"):
+                issues.append(
+                    "MCP addon present but API token missing — run: meshdrive mcp credentials ensure"
+                )
+    except Exception:
+        mcp_creds_report = None
 
     snap = {
         "SNAP": os.environ.get("SNAP"),
@@ -215,6 +247,7 @@ def run(verbose: bool = False) -> dict[str, Any]:
         "agent_start_hint": _agent_start_hint(),
         "filebrowser_db": str(FILEBROWSER_DB),
         "control_log": str(CONTROL_LOG),
+        "mcp_credentials": mcp_creds_report,
         "snap": snap,
         "share": str(SHARE),
         "issues": issues,
@@ -266,6 +299,10 @@ def print_report(report: dict[str, Any]) -> None:
     clog = report.get("control_log")
     if clog:
         print(f"  agent log: {clog}")
+    mcp_c = report.get("mcp_credentials")
+    if mcp_c:
+        mark = "✓" if mcp_c.get("configured") else "✗"
+        print(f"  mcp token: {mark} configured={mcp_c.get('configured')}")
     snap = report.get("snap") or {}
     if snap.get("SNAP"):
         print(f"  snap: {snap.get('SNAP')} common={snap.get('SNAP_COMMON')}")

@@ -107,8 +107,10 @@ class AgentAPI:
                 return 404, {"ok": False, "error": str(exc)}
             except ValueError as exc:
                 return 400, {"ok": False, "error": str(exc)}
-            except RuntimeError as exc:
+            except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
                 return 500, {"ok": False, "error": str(exc)}
+            except Exception as exc:  # noqa: BLE001 — never drop the HTTP connection
+                return 500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     def _handle(self, method: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         if method == "GET" and path == "/health":
@@ -180,11 +182,53 @@ class AgentAPI:
             raise ValueError(str(exc)) from exc
         if get_backend(name):
             raise ValueError(f"backend {name!r} already exists")
-        if not which_juicefs():
-            raise RuntimeError("juicefs is not installed yet")
+        juice = which_juicefs()
+        if not juice:
+            raise RuntimeError(
+                "juicefs binary not found "
+                f"(searched PATH and package bin; ROOT={ROOT})"
+            )
+        from meshdrive.runtime_paths import ensure_writable_data_tree
+
+        ensure_writable_data_tree()
         backend = default_backend(name, data_path, capacity_gb=capacity_gb)
-        format_backend(backend)
-        upsert_backend(backend)
+        try:
+            Path(backend["data_path"]).mkdir(parents=True, exist_ok=True)
+            Path(backend["mount_point"]).mkdir(parents=True, exist_ok=True)
+            Path(backend["cache_dir"]).mkdir(parents=True, exist_ok=True)
+            meta = backend.get("metadata_url") or ""
+            if meta.startswith("sqlite3://"):
+                Path(meta[len("sqlite3://") :]).parent.mkdir(parents=True, exist_ok=True)
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"PermissionError creating storage dirs under {ROOT} "
+                f"(data={backend['data_path']}): {exc}. "
+                "Leave Data path blank in the TUI (uses $SNAP_COMMON on snap), or run: "
+                f"sudo chown -R root:root {ROOT} && sudo chmod -R u+rwX {ROOT}/var {ROOT}/mnt"
+            ) from exc
+        except OSError as exc:
+            raise RuntimeError(
+                f"cannot create storage directories under {ROOT}: {exc}"
+            ) from exc
+        try:
+            format_backend(backend, binary=juice)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"juicefs format timed out after {exc.timeout}s — check disk and journalctl -u snap.meshdrive.agent"
+            ) from exc
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"PermissionError during juicefs format ({backend['data_path']}): {exc}"
+            ) from exc
+        except OSError as exc:
+            raise RuntimeError(f"juicefs format failed: {exc}") from exc
+        try:
+            upsert_backend(backend)
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"PermissionError writing config at {ROOT}/etc/config.yaml: {exc}. "
+                f"Fix with: sudo chown -R root:root {ROOT}/etc && sudo chmod u+rwX {ROOT}/etc"
+            ) from exc
         self._sync_filebrowser_root()
         try:
             from meshdrive.addons.openfga import grant_mcp_reader
@@ -499,10 +543,68 @@ class AgentAPI:
                     pass
 
     def _sync_filebrowser_root(self) -> None:
-        """One Filebrowser instance serves all volumes under $ROOT/mnt/<name>/."""
-        from meshdrive.runtime_paths import rewrite_runtime_config_paths
+        """Point Filebrowser at $ROOT/mnt and refresh portals after storage changes.
 
-        rewrite_runtime_config_paths()
+        Stops Filebrowser briefly so BoltDB ``config set --root`` can run, then
+        restarts it so the UI sees JuiceFS mounts under ``mnt/<name>``.
+        """
+        from meshdrive.auth import list_users
+        from meshdrive.runtime_paths import rewrite_runtime_config_paths
+        from meshdrive.storage.filebrowser import (
+            apply_filebrowser_server_config,
+            set_filebrowser_scope,
+            which_filebrowser,
+        )
+        from meshdrive.storage.portals import filebrowser_scope_for_user, rebuild_all_portals
+
+        was_running = self._filebrowser_is_running()
+        if was_running:
+            try:
+                self._filebrowser_stop_service()
+            except RuntimeError:
+                pass
+        try:
+            rewrite_runtime_config_paths()
+            from meshdrive.config import load_config, root
+            from meshdrive.storage.juicefs import (
+                normalize_filebrowser_scope,
+                preferred_admin_scope,
+                preferred_filebrowser_root,
+            )
+
+            fb = root(load_config()).get("filebrowser") or {}
+            fb_root = preferred_filebrowser_root()
+            apply_filebrowser_server_config(
+                address=str(fb.get("address") if fb.get("address") is not None else ""),
+                port=int(fb.get("port") or 8080),
+                root=fb_root,
+            )
+            users = list_users()
+            rebuild_all_portals(users)
+            if which_filebrowser():
+                for user in users:
+                    name = str(user.get("username") or "")
+                    if not name:
+                        continue
+                    admin = bool(user.get("admin"))
+                    access = list(user.get("storage_access") or [])
+                    if admin:
+                        raw_scope = preferred_admin_scope()
+                    else:
+                        raw_scope = filebrowser_scope_for_user(
+                            name, admin=False, storage_access=access
+                        ) or "."
+                    scope = normalize_filebrowser_scope(raw_scope, server_root=fb_root)
+                    try:
+                        set_filebrowser_scope(name, scope)
+                    except RuntimeError:
+                        pass
+        finally:
+            if was_running:
+                try:
+                    self._filebrowser_start_service()
+                except RuntimeError:
+                    pass
 
     def _install_addons(self, body: dict[str, Any]) -> dict[str, Any]:
         names = list(body.get("names") or [])
@@ -568,7 +670,10 @@ def make_handler(api: AgentAPI) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
-            code, payload = api.handle("GET", parsed.path, None)
+            try:
+                code, payload = api.handle("GET", parsed.path, None)
+            except Exception as exc:  # noqa: BLE001
+                code, payload = 500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             self._send(code, payload)
 
         def do_POST(self) -> None:  # noqa: N802
@@ -578,13 +683,19 @@ def make_handler(api: AgentAPI) -> type[BaseHTTPRequestHandler]:
             except (ValueError, json.JSONDecodeError) as exc:
                 self._send(400, {"ok": False, "error": str(exc)})
                 return
-            code, payload = api.handle("POST", parsed.path, body)
+            try:
+                code, payload = api.handle("POST", parsed.path, body)
+            except Exception as exc:  # noqa: BLE001
+                code, payload = 500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             self._send(code, payload)
 
         def do_DELETE(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             query = {key: values[0] for key, values in parse_qs(parsed.query).items() if values}
-            code, payload = api.handle("DELETE", parsed.path, query or None)
+            try:
+                code, payload = api.handle("DELETE", parsed.path, query or None)
+            except Exception as exc:  # noqa: BLE001
+                code, payload = 500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             self._send(code, payload)
 
     return Handler

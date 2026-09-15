@@ -84,6 +84,51 @@ def write_filebrowser_json(
         pass
 
 
+def apply_filebrowser_server_config(
+    *,
+    address: str | None = None,
+    port: int | None = None,
+    root: str | None = None,
+    database: str | None = None,
+) -> None:
+    """Push listen/root into Filebrowser's Bolt DB (JSON alone is not enough).
+
+    Filebrowser v2 stores authoritative settings in the database. Writing
+    ``filebrowser.json`` without ``config set`` leaves an old root (often empty
+    or ``.``), so the UI never shows JuiceFS mounts under ``$ROOT/mnt``.
+    """
+    from meshdrive.constants import MNT
+
+    binary = which_filebrowser()
+    if not binary:
+        return
+    db = database or str(FILEBROWSER_DB)
+    if not Path(db).is_file():
+        return
+    bind = "" if address is None else str(address)
+    root_path = str(root if root is not None else MNT)
+    Path(root_path).mkdir(parents=True, exist_ok=True)
+    cmd = [
+        str(binary),
+        "config",
+        "set",
+        "-d",
+        db,
+        "--address",
+        bind,
+        "--port",
+        str(int(port or 8080)),
+        "--root",
+        root_path,
+        "--minimumPasswordLength",
+        str(MIN_PASSWORD_LENGTH),
+    ]
+    proc = _run(cmd, timeout=60)
+    if proc.returncode != 0:
+        # Best-effort: caller still has JSON; doctor/logs can surface failures.
+        pass
+
+
 def _run(cmd: list[str], *, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     # Prefer running as meshdrive so filebrowser.db ownership stays correct
     # (agent often runs as root; the Filebrowser unit runs as meshdrive).
@@ -205,9 +250,12 @@ def add_filebrowser_user(
 
 def set_filebrowser_scope(username: str, scope: str) -> None:
     """Set Filebrowser --scope for an existing user (private home)."""
+    from meshdrive.storage.juicefs import normalize_filebrowser_scope, preferred_filebrowser_root
+
     binary = which_filebrowser()
     if not binary:
         raise RuntimeError("filebrowser binary not found")
+    normalized = normalize_filebrowser_scope(scope, server_root=preferred_filebrowser_root())
     proc = _run(
         [
             str(binary),
@@ -215,7 +263,7 @@ def set_filebrowser_scope(username: str, scope: str) -> None:
             "update",
             username,
             "--scope",
-            scope,
+            normalized,
             "-d",
             str(FILEBROWSER_DB),
         ]

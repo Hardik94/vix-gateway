@@ -51,16 +51,70 @@ def canonicalize_data_path(path: Path | str, *, default: Path) -> Path:
     raw = str(path or "").strip()
     if not raw:
         return default
-    p = Path(raw)
+    p = map_legacy_root_path(raw)
     if is_readonly_snap_path(p) or is_revision_data_path(p):
         return default
     return p
 
 
+def map_legacy_root_path(path: Path | str) -> Path:
+    """Rewrite ``/opt/meshdrive/...`` onto ``ROOT`` (snap: ``$SNAP_COMMON``).
+
+    The TUI placeholder historically suggested ``/opt/meshdrive/var/data/...``.
+    After ``sudo`` addon installs, a host leftover ``/opt/meshdrive`` can exist
+    **without** the snap layout bind, so creates fail with PermissionError while
+    the real writable tree is ``/var/snap/meshdrive/common``.
+    """
+    raw = str(path or "").strip()
+    if not raw:
+        return ROOT
+    p = Path(raw).expanduser()
+    text = p.as_posix() if p.is_absolute() else p.as_posix()
+    # Normalize common prefixes (with or without trailing slash).
+    for prefix in ("/opt/meshdrive", "/var/snap/meshdrive/common"):
+        if text == prefix:
+            return ROOT
+        if text.startswith(prefix + "/"):
+            rel = text[len(prefix) + 1 :]
+            return ROOT / rel if rel else ROOT
+    return p
+
+
+def ensure_writable_data_tree() -> None:
+    """Best-effort mkdir/chmod so storage create works after sudo addon installs."""
+    ensure_runtime_dirs()
+    for path in (
+        ROOT,
+        ROOT / "etc",
+        ROOT / "bin",
+        ROOT / "mnt",
+        VAR,
+        VAR / "data",
+        VAR / "meta",
+        VAR / "cache",
+        VAR / "log",
+        VAR / "tmp",
+        VAR / "openfga",
+    ):
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        try:
+            # Keep dirs traversable; do not loosen file secrets (credentials stay 0600).
+            if path.is_dir():
+                mode = path.stat().st_mode & 0o777
+                if mode & 0o100 == 0 or mode & 0o200 == 0:
+                    path.chmod(0o755)
+        except OSError:
+            pass
+
+
 def rewrite_runtime_config_paths() -> dict[str, Any]:
     """Force config + filebrowser.json onto ROOT (layout /opt/meshdrive under snap)."""
     from meshdrive.config import load_config, root, save_config
-    from meshdrive.storage.filebrowser import write_filebrowser_json
+    from meshdrive.storage.filebrowser import apply_filebrowser_server_config, write_filebrowser_json
+    from meshdrive.storage.juicefs import preferred_filebrowser_root
 
     ensure_runtime_dirs()
     cfg = load_config()
@@ -69,8 +123,9 @@ def rewrite_runtime_config_paths() -> dict[str, Any]:
     auth = md.setdefault("auth", {})
     isolation = md.setdefault("isolation", {})
 
+    fb_root = preferred_filebrowser_root()
     fb["database"] = str(FILEBROWSER_DB)
-    fb["root"] = str(MNT)
+    fb["root"] = fb_root
     if "address" not in fb:
         fb["address"] = ""
     fb.setdefault("hostname", "meshdrive.local")
@@ -84,10 +139,20 @@ def rewrite_runtime_config_paths() -> dict[str, Any]:
     write_filebrowser_json(
         address=str(fb.get("address") if fb.get("address") is not None else ""),
         port=int(fb.get("port") or 8080),
-        root=str(MNT),
+        root=fb_root,
         database=str(FILEBROWSER_DB),
         path=FILEBROWSER_JSON,
     )
+    # Bolt DB is authoritative while the service is stopped; apply when possible.
+    try:
+        apply_filebrowser_server_config(
+            address=str(fb.get("address") if fb.get("address") is not None else ""),
+            port=int(fb.get("port") or 8080),
+            root=fb_root,
+            database=str(FILEBROWSER_DB),
+        )
+    except Exception:
+        pass
     return cfg
 
 
@@ -140,8 +205,15 @@ def ensure_filebrowser_db() -> Path:
 def prepare_runtime() -> None:
     """Dirs + canonical paths + Filebrowser DB — call on agent start."""
     ensure_runtime_dirs()
+    ensure_writable_data_tree()
     (VAR / "log").mkdir(parents=True, exist_ok=True)
     rewrite_runtime_config_paths()
+    try:
+        from meshdrive.storage.juicefs import ensure_user_allow_other
+
+        ensure_user_allow_other()
+    except Exception:
+        pass
     try:
         ensure_filebrowser_db()
     except RuntimeError:

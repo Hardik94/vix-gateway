@@ -111,8 +111,22 @@ def filebrowser_scope_for_user(
     admin: bool,
     storage_access: list[str] | None,
 ) -> str | None:
-    """Return Filebrowser ``--scope`` path, or None for unrestricted (admin)."""
+    """Return Filebrowser ``--scope`` path, or None for unrestricted (admin).
+
+    A single assigned bucket scopes directly to the JuiceFS mount so the usage
+    bar reflects ``--capacity``. Multiple buckets use a portal of symlinks
+    (usage bar then reflects the host portal dir — Filebrowser limitation).
+    """
     if admin:
         return None
-    portal = rebuild_user_portal(username, list(storage_access or []))
+    access = [str(n).strip() for n in (storage_access or []) if str(n).strip()]
+    if len(access) == 1:
+        from meshdrive.config import get_backend
+        from meshdrive.constants import MNT
+
+        item = get_backend(access[0]) or {}
+        mount = item.get("mount_point") or item.get("mountpoint") or str(MNT / access[0])
+        Path(mount).mkdir(parents=True, exist_ok=True)
+        return str(Path(mount).resolve())
+    portal = rebuild_user_portal(username, access)
     return str(portal.resolve())
