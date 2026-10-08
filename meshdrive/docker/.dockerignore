@@ -1,0 +1,8 @@
+# Build context is only this docker/ directory (entrypoint + Dockerfile).
+# Never send the MeshDrive source tree into the daemon.
+*
+!Dockerfile
+!entrypoint.sh
+!docker-compose.yml
+!.env.example
+!README.md

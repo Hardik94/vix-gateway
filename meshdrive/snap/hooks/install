@@ -1,0 +1,49 @@
+#!/bin/sh
+# Seed writable $SNAP_COMMON. Never write under $SNAP (read-only) or $SNAP_DATA.
+set -e
+
+ROOT="${SNAP_COMMON:-/var/snap/meshdrive/common}"
+mkdir -p \
+  "$ROOT/etc" \
+  "$ROOT/var/log" \
+  "$ROOT/var/cache" \
+  "$ROOT/var/meta" \
+  "$ROOT/var/data" \
+  "$ROOT/var/tmp" \
+  "$ROOT/var/telemetry" \
+  "$ROOT/var/openfga" \
+  "$ROOT/var/wireguard" \
+  "$ROOT/var/xdg-config" \
+  "$ROOT/var/xdg-data" \
+  "$ROOT/mnt" \
+  "$ROOT/bin"
+
+SRC_ETC="$SNAP/opt/meshdrive/etc"
+if [ -d "$SRC_ETC" ] && [ ! -f "$ROOT/etc/config.yaml" ]; then
+  cp -a "$SRC_ETC/." "$ROOT/etc/"
+fi
+
+# Point seeded configs at $SNAP_COMMON (absolute), not /opt/meshdrive layout.
+if [ -f "$ROOT/etc/filebrowser.json" ]; then
+  # Minimal rewrite without requiring jq/python in the hook.
+  sed -i \
+    -e "s|/opt/meshdrive/var/filebrowser.db|${ROOT}/var/filebrowser.db|g" \
+    -e "s|/opt/meshdrive/mnt|${ROOT}/mnt|g" \
+    "$ROOT/etc/filebrowser.json" 2>/dev/null || true
+fi
+if [ -f "$ROOT/etc/config.yaml" ]; then
+  sed -i \
+    -e "s|/opt/meshdrive|${ROOT}|g" \
+    "$ROOT/etc/config.yaml" 2>/dev/null || true
+fi
+
+FB="$SNAP/opt/meshdrive/bin/filebrowser"
+DB="$ROOT/var/filebrowser.db"
+if [ -x "$FB" ] && [ ! -f "$DB" ]; then
+  "$FB" config init -d "$DB" >/dev/null 2>&1 || true
+  "$FB" config set -d "$DB" \
+    --address "" \
+    --port 8080 \
+    --root "$ROOT/mnt" \
+    --minimumPasswordLength 12 >/dev/null 2>&1 || true
+fi

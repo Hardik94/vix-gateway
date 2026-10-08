@@ -1,0 +1,7 @@
+# Allow members of group meshdrive to start/stop MeshDrive units without a root shell.
+%meshdrive ALL=(root) NOPASSWD: /bin/systemctl start meshdrive-agent.service, /bin/systemctl stop meshdrive-agent.service, /bin/systemctl restart meshdrive-agent.service, /bin/systemctl status meshdrive-agent.service
+%meshdrive ALL=(root) NOPASSWD: /bin/systemctl start meshdrive-filebrowser.service, /bin/systemctl stop meshdrive-filebrowser.service, /bin/systemctl restart meshdrive-filebrowser.service
+%meshdrive ALL=(root) NOPASSWD: /bin/systemctl start meshdrive-mount@*, /bin/systemctl stop meshdrive-mount@*, /bin/systemctl restart meshdrive-mount@*
+%meshdrive ALL=(root) NOPASSWD: /bin/systemctl start meshdrive-mcp.service, /bin/systemctl stop meshdrive-mcp.service, /bin/systemctl restart meshdrive-mcp.service
+%meshdrive ALL=(root) NOPASSWD: /bin/systemctl start meshdrive-openfga.service, /bin/systemctl stop meshdrive-openfga.service, /bin/systemctl restart meshdrive-openfga.service
+%meshdrive ALL=(root) NOPASSWD: /bin/systemctl start meshdrive-otel.service, /bin/systemctl stop meshdrive-otel.service, /bin/systemctl restart meshdrive-otel.service

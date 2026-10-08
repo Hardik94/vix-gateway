@@ -1,0 +1,42 @@
+{
+  "name": "meshdrive",
+  "display_name": "MeshDrive",
+  "description": "Local-first JuiceFS storage MCP with path isolation and optional OpenFGA. File tools only access configured storage buckets.",
+  "version": "2.3.9",
+  "homepage": "https://example.com/meshdrive",
+  "repository": "https://github.com/EXAMPLE/shabdabhav",
+  "privacy_policies": [
+    {
+      "url": "https://example.com/meshdrive/privacy",
+      "name": "MeshDrive MCP Privacy Policy"
+    }
+  ],
+  "transport": {
+    "preferred": "streamable-http",
+    "status": "planned",
+    "available_today": ["stdio", "sse"],
+    "notes": "Claude Connectors Directory requires Streamable HTTP + OAuth. Local Claude Code uses stdio today."
+  },
+  "authentication": {
+    "directory_required": "oauth2_dcr",
+    "available_today": "bearer_mcp_token",
+    "token_hint": "meshdrive mcp credentials create|show"
+  },
+  "tool_annotation_status": "partial",
+  "tool_annotation_todo": [
+    "title",
+    "readOnlyHint",
+    "destructiveHint",
+    "idempotentHint",
+    "openWorldHint"
+  ],
+  "limits": {
+    "max_tool_result_chars": 150000,
+    "timeout_seconds": 300
+  },
+  "security": {
+    "isolation": "juicefs_mount_only",
+    "authorization": "optional_openfga",
+    "benchmark": "benchmark/runner/run_isolation_bench.py"
+  }
+}

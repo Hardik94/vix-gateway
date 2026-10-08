@@ -1,0 +1,19 @@
+[Unit]
+Description=MeshDrive JuiceFS mount (%i)
+After=network-online.target meshdrive-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=MESHDRIVE_ROOT=/opt/meshdrive
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/meshdrive/bin/meshdrive-mount %i
+ExecStop=/opt/meshdrive/bin/juicefs umount /opt/meshdrive/mnt/%i
+Restart=on-failure
+RestartSec=10
+
+# FUSE mount
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=MeshDrive
+GenericName=Local-first storage
+Comment=Local-first JuiceFS storage with TUI and Filebrowser
+Exec=meshdrive-wrapper meshdrive-tui
+Icon=in.vistrix.MeshDrive
+Terminal=true
+Type=Application
+Categories=System;Utility;Filesystem;
+Keywords=storage;juicefs;files;mcp;ai;local;
+StartupNotify=true

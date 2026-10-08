@@ -1,0 +1,133 @@
+# Flatpak manifest for MeshDrive 2.0
+# App ID: in.vistrix.MeshDrive (vistrix.in)
+#
+# Local build:
+#   ./flatpak/update-binary-sources.sh   # fills JuiceFS/Filebrowser sha256
+#   flatpak-builder --user --install --force-clean .flatpak-build flatpak/in.vistrix.MeshDrive.yaml
+#
+# Bundle for community upload (GitHub Releases / Discord / BharatOS):
+#   flatpak build-bundle ~/.local/share/flatpak/repo dist/meshdrive-2.0.0-x86_64.flatpak in.vistrix.MeshDrive
+#
+# See flatpak/README.md for Flathub community submission steps.
+
+app-id: in.vistrix.MeshDrive
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+command: meshdrive-wrapper
+finish-args:
+  # Loopback agent / Filebrowser / MCP + PyPI for optional add-ons
+  - --share=network
+  - --share=ipc
+  # JuiceFS FUSE mounts
+  - --device=all
+  # Choose host paths for storage backends; home for default data dir
+  - --filesystem=home
+  - --filesystem=/media
+  - --filesystem=/mnt
+  - --filesystem=/run/media
+  # Terminal TUI
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --socket=session-bus
+  - --talk-name=org.freedesktop.Notifications
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/man
+  - /share/doc
+  - "*.a"
+  - "*.la"
+
+modules:
+  # --- Pinned JuiceFS (amd64) — run update-binary-sources.sh to refresh sha256 ---
+  - name: juicefs
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 juicefs /app/libexec/meshdrive/bin/juicefs
+    sources:
+      - type: archive
+        only-arches: [x86_64]
+        url: https://github.com/juicedata/juicefs/releases/download/v1.4.1/juicefs-1.4.1-linux-amd64.tar.gz
+        sha256: "REPLACE_WITH_JUICEFS_SHA256"
+
+  # --- Pinned Filebrowser (amd64) ---
+  - name: filebrowser
+    buildsystem: simple
+    build-commands:
+      - |
+        set -eux
+        if [ -f filebrowser ]; then
+          install -Dm755 filebrowser /app/libexec/meshdrive/bin/filebrowser
+        elif [ -f linux-amd64-filebrowser/filebrowser ]; then
+          install -Dm755 linux-amd64-filebrowser/filebrowser /app/libexec/meshdrive/bin/filebrowser
+        else
+          found="$(find . -maxdepth 3 -type f -name filebrowser | head -n1)"
+          test -n "${found}"
+          install -Dm755 "${found}" /app/libexec/meshdrive/bin/filebrowser
+        fi
+    sources:
+      - type: archive
+        only-arches: [x86_64]
+        url: https://github.com/filebrowser/filebrowser/releases/download/v2.63.23/linux-amd64-filebrowser.tar.gz
+        sha256: "REPLACE_WITH_FILEBROWSER_SHA256"
+  # --- Python runtime deps (network required for first local builds) ---
+  - name: python-deps
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      - pip3 install --prefix=/app --no-cache-dir "textual>=0.80.0" "pyyaml>=6.0" "argon2-cffi>=23.1.0"
+    sources:
+      - type: file
+        path: ../pyproject.toml
+
+  # --- MeshDrive application ---
+  - name: meshdrive
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      - |
+        set -eux
+        ROOT=/app/libexec/meshdrive
+        mkdir -p "${ROOT}/venv" "${ROOT}/pkg" /app/bin /app/share/meshdrive/etc \
+          /app/share/icons/hicolor/scalable/apps \
+          /app/share/applications \
+          /app/share/metainfo
+        cp -a src "${ROOT}/pkg/src"
+        cp pyproject.toml README.md "${ROOT}/pkg/"
+        python3 -m venv "${ROOT}/venv"
+        "${ROOT}/venv/bin/pip" install --upgrade pip wheel
+        "${ROOT}/venv/bin/pip" install "${ROOT}/pkg"
+        # Default configs (seeded into XDG data dir at runtime)
+        cp -a overlay/opt/meshdrive/etc/. /app/share/meshdrive/etc/
+        install -Dm755 flatpak/meshdrive-wrapper.sh /app/bin/meshdrive-wrapper
+        # Convenience commands
+        for name in meshdrive meshdrive-tui meshdrive-agent meshdrive-addons; do
+          printf '%s\n' '#!/bin/sh' "exec /app/bin/meshdrive-wrapper ${name} \"\$@\"" \
+            > "/app/bin/${name}"
+          chmod 755 "/app/bin/${name}"
+        done
+        printf '%s\n' '#!/bin/sh' 'exec /app/bin/meshdrive-wrapper doctor "$@"' \
+          > /app/bin/meshdrive-doctor
+        chmod 755 /app/bin/meshdrive-doctor
+        install -Dm644 flatpak/in.vistrix.MeshDrive.desktop \
+          /app/share/applications/in.vistrix.MeshDrive.desktop
+        install -Dm644 flatpak/in.vistrix.MeshDrive.metainfo.xml \
+          /app/share/metainfo/in.vistrix.MeshDrive.metainfo.xml
+        install -Dm644 flatpak/in.vistrix.MeshDrive.svg \
+          /app/share/icons/hicolor/scalable/apps/in.vistrix.MeshDrive.svg
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - .flatpak-build
+          - .git
+          - dist
+          - "**/.venv"
+          - "**/__pycache__"
+          - marketing

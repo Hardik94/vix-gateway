@@ -1,0 +1,8 @@
+{
+  "port": 8080,
+  "baseURL": "",
+  "address": "",
+  "log": "stdout",
+  "database": "/opt/meshdrive/var/filebrowser.db",
+  "root": "/opt/meshdrive/mnt"
+}

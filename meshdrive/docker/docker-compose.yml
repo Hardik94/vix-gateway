@@ -1,0 +1,56 @@
+# MeshDrive Ubuntu container — installs the published .deb from GitHub
+# (no local source tree). Default tag: v2.3.1
+#
+#   cd meshdrive-2.0/docker
+#   docker compose up --build
+#
+# On Apple Silicon, platform linux/amd64 uses emulation.
+
+services:
+  meshdrive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MESHDRIVE_VERSION: ${MESHDRIVE_VERSION:-v2.3.1}
+        MESHDRIVE_DEB_VERSION: ${MESHDRIVE_DEB_VERSION:-2.3.1}
+        # Override to pin a mirror or local file URL if needed:
+        # DEB_URL: https://github.com/Hardik94/vix-gateway/releases/download/v2.3.1/meshdrive_2.3.1_amd64.deb
+    image: meshdrive:${MESHDRIVE_DEB_VERSION:-2.3.1}
+    platform: linux/amd64
+    container_name: meshdrive
+    restart: unless-stopped
+    # JuiceFS FUSE mounts need elevated capabilities inside Docker.
+    privileged: true
+    devices:
+      - /dev/fuse:/dev/fuse
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    environment:
+      MESHDRIVE_ROOT: /opt/meshdrive
+      # Publish agent API to host via port mapping (lab only).
+      MESHDRIVE_CONTROL_HOST: "0.0.0.0"
+      MESHDRIVE_INSTALL_MCP: "${MESHDRIVE_INSTALL_MCP:-0}"
+      MESHDRIVE_INSTALL_OPENFGA: "${MESHDRIVE_INSTALL_OPENFGA:-0}"
+    ports:
+      - "${MESHDRIVE_AGENT_PORT:-12700}:12700"
+      - "${MESHDRIVE_FB_PORT:-8080}:8080"
+      - "${MESHDRIVE_MCP_PORT:-9000}:9000"
+    volumes:
+      - meshdrive-var:/opt/meshdrive/var
+      - meshdrive-mnt:/opt/meshdrive/mnt
+      # Optional: persist config/auth across recreate
+      - meshdrive-etc:/opt/meshdrive/etc
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:12700/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+
+volumes:
+  meshdrive-var:
+  meshdrive-mnt:
+  meshdrive-etc:

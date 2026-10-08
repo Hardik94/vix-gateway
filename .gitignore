@@ -1,0 +1,15 @@
+.pyc
+.snap
+.deb
+juicefs
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+dist/
+*.egg-info/
+devroot/
+.pytest_cache/
+.flatpak-build/
+*.flatpak

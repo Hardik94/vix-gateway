@@ -1,0 +1,36 @@
+[Unit]
+Description=MeshDrive OpenFGA (loopback, sqlite under /opt/meshdrive)
+After=network-online.target meshdrive-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meshdrive
+Group=meshdrive
+Environment=MESHDRIVE_ROOT=/opt/meshdrive
+# SQLite schema must exist before run (required since OpenFGA 1.x).
+ExecStartPre=/opt/meshdrive/bin/openfga migrate \
+  --datastore-engine sqlite \
+  --datastore-uri file:/opt/meshdrive/var/openfga/openfga.db
+ExecStart=/opt/meshdrive/bin/openfga run \
+  --datastore-engine sqlite \
+  --datastore-uri file:/opt/meshdrive/var/openfga/openfga.db \
+  --http-addr 127.0.0.1:8081 \
+  --grpc-addr 127.0.0.1:8082 \
+  --playground-enabled=false \
+  --metrics-enabled=false \
+  --log-format json
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/meshdrive/var/openfga /opt/meshdrive/var/log
+ReadOnlyPaths=/opt/meshdrive/etc /opt/meshdrive/bin
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 ::1/128
+
+[Install]
+WantedBy=multi-user.target

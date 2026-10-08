@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "meshdrive": {
+      "command": "/opt/meshdrive/bin/meshdrive-mcp",
+      "args": [],
+      "env": {
+        "MESHDRIVE_ROOT": "/opt/meshdrive",
+        "MESHDRIVE_MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}
